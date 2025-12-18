@@ -1,245 +1,705 @@
-import React, { useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Upload, Plus, Trash2, GripVertical } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import  DashboardLayout  from '@/components/DashboardLayout';
+import React, { useState, useRef, useEffect } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Upload,
+  Plus,
+  Trash2,
+  GripVertical,
+  Copy,
+  Share2,
+  CheckCircle,
+  ExternalLink
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent } from "@/components/ui/card";
+import DashboardLayout from "@/components/DashboardLayout";
+import { supabase } from "@/supabaseClient";
+import { useNavigate } from "react-router-dom";
+import QRCode from "qrcode";
 
 export const CreateCertificatePage = () => {
+  const navigate = useNavigate();
+
   const [currentStep, setCurrentStep] = useState(1);
+  const [courseTitle, setCourseTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [learners, setLearners] = useState(50);
+
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfUrl, setPdfUrl] = useState(null);
+  const fileInputRef = useRef(null);
+  const previewRef = useRef(null);
+
+  // fields now support type: "text" | "qr" and qrImage for qr type
   const [fields, setFields] = useState([
-    { id: '1', label: 'Recipient Name', x: 50, y: 40, width: 200, height: 40 },
+    { id: Date.now().toString(), type: "text", label: "Recipient Name", x: 50, y: 80, width: 250, height: 36 },
   ]);
-  
-  const steps = [
-    { number: 1, title: 'Group Details' },
-    { number: 2, title: 'Template Designer' },
-    { number: 3, title: 'Finalize & Deploy' },
-  ];
-  
+
+  const draggingRef = useRef({ id: null, offsetX: 0, offsetY: 0 });
+  const resizingRef = useRef({ id: null });
+
+  const [loading, setLoading] = useState(false);
+
+  // NEW — store deployed group info
+  const [deployedGroup, setDeployedGroup] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  // NEW — expand state
+  const [expanded, setExpanded] = useState(false);
+
+  // ============================
+  // OPEN FULL POPUP PREVIEW
+  // ============================
+  const openFullPreview = () => {
+    if (!pdfUrl) return alert("Upload a PDF first");
+
+    const popup = window.open(
+      "",
+      "certificatePreview",
+      "popup=yes,width=1400,height=900,left=200,top=100,resizable=yes,scrollbars=yes"
+    );
+
+    if (!popup) {
+      return alert("Popup blocked! Please enable popups for this site.");
+    }
+
+    popup.document.write(`
+      <html>
+        <head>
+          <title>Certificate Full Preview</title>
+          <style>
+            body {
+              margin: 0;
+              padding: 40px;
+              background: #f1f5f9;
+              display: flex;
+              justify-content: center;
+              align-items: flex-start;
+              min-height: 100vh;
+            }
+            .canvas {
+              position: relative;
+              width: 800px;
+              height: 560px;
+              background: white;
+              border-radius: 10px;
+              overflow: hidden;
+              box-shadow: 0 0 25px rgba(0,0,0,0.18);
+            }
+            .field-box {
+              position: absolute;
+              background: rgba(219,234,254,0.8);
+              border: 2px solid #3b82f6;
+              border-radius: 6px;
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              font-family: sans-serif;
+              font-size: 13px;
+              color: #1e3a8a;
+              pointer-events: none;
+            }
+            .qr-img {
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+          </style>
+        </head>
+
+        <body>
+          <div class="canvas">
+            <iframe 
+              src="${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0"
+              style="position:absolute; inset:0; width:100%; height:100%; border:none; pointer-events:none;"
+            ></iframe>
+
+            ${fields
+              .map(
+                (f) => {
+                  if (f.type === "qr") {
+                    return `<div style="position:absolute; left:${f.x}px; top:${f.y}px; width:${f.width}px; height:${f.height}px;">
+                              <img src="${f.qrImage}" class="qr-img" />
+                            </div>`;
+                  } else {
+                    return `<div class="field-box" style="left:${f.x}px; top:${f.y}px; width:${f.width}px; height:${f.height}px;">
+                              ${f.label}
+                            </div>`;
+                  }
+                }
+              )
+              .join("")}
+          </div>
+        </body>
+      </html>
+    `);
+
+    popup.document.close();
+    popup.focus();
+  };
+
+  // ============================
+  // JOIN CODE GENERATOR
+  // ============================
+  const generateJoinCode = () => {
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let code = "";
+    for (let i = 0; i < 8; i++) {
+      code += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return code;
+  };
+
+  // ============================
+  // PDF UPLOAD
+  // ============================
+  const uploadPdfToStorage = async (file) => {
+    if (!file) return null;
+    const fileExt = file.name.split(".").pop();
+    const fileName = `template-${Date.now()}.${fileExt}`;
+    const bucket = "certificate-templates";
+
+    try {
+      const { data, error } = await supabase.storage
+        .from(bucket)
+        .upload(fileName, file, { upsert: false });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(data.path);
+
+      return urlData.publicUrl;
+    } catch (err) {
+      alert("PDF upload failed: " + err.message);
+      return null;
+    }
+  };
+
+  const onSelectFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert("Max file size 5MB");
+      return;
+    }
+
+    setPdfFile(file);
+    setLoading(true);
+    const url = await uploadPdfToStorage(file);
+    setLoading(false);
+
+    if (url) {
+      setPdfUrl(url);
+    }
+  };
+
+  // ============================
+  // FIELD ACTIONS
+  // ============================
   const addField = () => {
-    setFields([...fields, {
-      id: Date.now().toString(),
-      label: 'New Field',
-      x: 50,
-      y: 50,
-      width: 200,
-      height: 40,
-    }]);
+    setFields((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        type: "text",
+        label: "New Field",
+        x: 60,
+        y: 120,
+        width: 200,
+        height: 36,
+      },
+    ]);
   };
-  
+
+  // NEW — add QR code (static content)
+  const addQrCode = async () => {
+    try {
+      // static value as per Option A
+      const qrData = "STATIC-QR-CODE";
+      const qrDataUrl = await QRCode.toDataURL(qrData, { margin: 1 });
+
+      setFields((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          type: "qr",
+          qrImage: qrDataUrl,
+          x: 100,
+          y: 120,
+          width: 120,
+          height: 120,
+        },
+      ]);
+    } catch (err) {
+      console.error("QR generation failed", err);
+      alert("Failed to generate QR code");
+    }
+  };
+
   const removeField = (id) => {
-    setFields(fields.filter(f => f.id !== id));
+    setFields((prev) => prev.filter((f) => f.id !== id));
   };
-  
+
+  const updateLabel = (id, label) => {
+    setFields((prev) => prev.map((f) => (f.id === id ? { ...f, label } : f)));
+  };
+
+  // ============================
+  // DRAG / RESIZE HANDLERS (scaled-aware)
+  // ============================
+  useEffect(() => {
+    const onMove = (e) => {
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      const rect = previewRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      // DRAG
+      if (draggingRef.current.id) {
+        const { id, offsetX, offsetY } = draggingRef.current;
+
+        const displayedWidth = rect.width;
+        const displayedHeight = rect.height;
+
+        let newDisplayedX = clientX - rect.left - offsetX;
+        let newDisplayedY = clientY - rect.top - offsetY;
+
+        // clamp within canvas
+        newDisplayedX = Math.max(0, Math.min(newDisplayedX, displayedWidth));
+        newDisplayedY = Math.max(0, Math.min(newDisplayedY, displayedHeight));
+
+        // convert displayed pixels back to base 800x560 coords
+        const baseX = Math.round((newDisplayedX / displayedWidth) * 800);
+        const baseY = Math.round((newDisplayedY / displayedHeight) * 560);
+
+        setFields((prev) => prev.map((f) => (f.id === id ? { ...f, x: baseX, y: baseY } : f)));
+      }
+
+      // RESIZE (bottom-right corner only implemented)
+      if (resizingRef.current.id) {
+        const { id, startDisplayW, startDisplayH, startX, startY, corner } = resizingRef.current;
+        const dx = clientX - startX;
+        const dy = clientY - startY;
+
+        const displayedWidth = rect.width;
+        const displayedHeight = rect.height;
+
+        setFields((prev) =>
+          prev.map((f) => {
+            if (f.id !== id) return f;
+
+            let newDisplayW = startDisplayW;
+            let newDisplayH = startDisplayH;
+
+            if (corner === "br") {
+              newDisplayW = Math.max(30, startDisplayW + dx);
+              newDisplayH = Math.max(20, startDisplayH + dy);
+            }
+
+            // convert back to base units
+            const baseW = Math.round((newDisplayW / displayedWidth) * 800);
+            const baseH = Math.round((newDisplayH / displayedHeight) * 560);
+
+            return { ...f, width: baseW, height: baseH };
+          })
+        );
+      }
+    };
+
+    const onUp = () => {
+      draggingRef.current = { id: null, offsetX: 0, offsetY: 0 };
+      resizingRef.current = { id: null };
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+    };
+  }, []);
+
+  const startDrag = (e, id) => {
+    e.stopPropagation();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const rect = previewRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const field = fields.find((f) => f.id === id);
+    if (!field) return;
+
+    // compute displayed position of field from base coordinates
+    const displayedX = (field.x / 800) * rect.width;
+    const displayedY = (field.y / 560) * rect.height;
+
+    const offsetX = clientX - rect.left - displayedX;
+    const offsetY = clientY - rect.top - displayedY;
+
+    draggingRef.current = { id, offsetX, offsetY };
+  };
+
+  const startResize = (e, id, corner) => {
+    e.stopPropagation();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const rect = previewRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const field = fields.find((f) => f.id === id);
+    if (!field) return;
+
+    // compute displayed sizes
+    const startDisplayW = (field.width / 800) * rect.width;
+    const startDisplayH = (field.height / 560) * rect.height;
+
+    resizingRef.current = {
+      id,
+      startDisplayW,
+      startDisplayH,
+      startX: clientX,
+      startY: clientY,
+      corner,
+    };
+  };
+
+  // ============================
+  // COPY + SHARE
+  // ============================
+  const copyJoinCode = () => {
+    if (!deployedGroup?.joinCode) return;
+    navigator.clipboard.writeText(deployedGroup.joinCode);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareLink = () => {
+    if (!deployedGroup?.joinCode) return;
+    const url = `${window.location.origin}/join/${deployedGroup.joinCode}`;
+    navigator.clipboard.writeText(url);
+    alert("Share link copied to clipboard!");
+  };
+
+  // ============================
+  // DEPLOY GROUP (saves fields including qr)
+  // ============================
+  const deployGroup = async () => {
+    setLoading(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const user = sessionData?.session?.user;
+      if (!user) throw new Error("Not authenticated");
+
+      const joinCode = generateJoinCode();
+
+      const { data: groupData, error: groupError } = await supabase
+        .from("groups")
+        .insert([
+          {
+            name: courseTitle,
+            description,
+            created_by: user.id,
+            max_learners: learners,
+            status: "active",
+            join_code: joinCode,
+          },
+        ])
+        .select()
+        .single();
+
+      if (groupError) throw groupError;
+
+      let templateId = null;
+
+      if (pdfUrl) {
+        const { data: templateData, error: templateError } = await supabase
+          .from("certificate_templates")
+          .insert([
+            {
+              group_id: groupData.id,
+              pdf_url: pdfUrl,
+              created_by: user.id,
+            },
+          ])
+          .select()
+          .single();
+        if (templateError) throw templateError;
+
+        templateId = templateData.id;
+      }
+
+      if (templateId && fields.length) {
+        const payload = fields.map((f) => ({
+          template_id: templateId,
+          label: f.type === "text" ? f.label : null,
+          type: f.type || "text",
+          qr_image: f.type === "qr" ? f.qrImage : null,
+          x: Math.round(f.x),
+          y: Math.round(f.y),
+          width: Math.round(f.width),
+          height: Math.round(f.height),
+        }));
+
+        const { error: fieldsError } = await supabase.from("template_fields").insert(payload);
+        if (fieldsError) throw fieldsError;
+      }
+
+      if (templateId) {
+        const { error: updateErr } = await supabase
+          .from("groups")
+          .update({ template_id: templateId })
+          .eq("id", groupData.id);
+        if (updateErr) throw updateErr;
+      }
+
+      setDeployedGroup({
+        groupId: groupData.id,
+        joinCode,
+      });
+
+      setCurrentStep(4);
+    } catch (err) {
+      alert("Deploy failed: " + (err.message || JSON.stringify(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ---------------------------------------------------
+  // RENDER
+  // ---------------------------------------------------
   return (
     <DashboardLayout>
-      <div className="max-w-5xl mx-auto space-y-8">
-        {/* Progress Steps */}
-        <div data-aos="fade-down">
-          <Button variant="ghost" className="mb-4 text-slate-600 hover:text-slate-900" onClick={() => window.history.back()}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Dashboard
-          </Button>
-          
-          <h1 className="text-4xl font-bold text-slate-900 mb-8">Create Certificate Group</h1>
-          
-          <div className="flex items-center justify-between mb-12">
-            {steps.map((step, index) => (
-              <div key={step.number} className="flex items-center flex-1">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-12 h-12 rounded-full flex items-center justify-center font-bold transition-all duration-300 ${
-                      currentStep > step.number
-                        ? 'bg-green-600 text-white'
-                        : currentStep === step.number
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-200 text-slate-500'
-                    }`}
-                  >
-                    {currentStep > step.number ? <Check className="w-6 h-6" /> : step.number}
-                  </div>
-                  <div className="hidden md:block">
-                    <div className="text-sm text-slate-500">Step {step.number}</div>
-                    <div className="font-semibold text-slate-900">{step.title}</div>
-                  </div>
-                </div>
-                {index < steps.length - 1 && (
-                  <div
-                    className={`flex-1 h-1 mx-4 rounded transition-colors duration-300 ${
-                      currentStep > step.number ? 'bg-green-600' : 'bg-slate-200'
-                    }`}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="max-w-6xl mx-auto space-y-8">
         
-        {/* Step 1: Group Details */}
+        <Button
+          variant="ghost"
+          className="mb-4 text-slate-600 hover:text-slate-900"
+          onClick={() => window.history.back()}
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Back to Dashboard
+        </Button>
+
+        <h1 className="text-4xl font-bold text-slate-900 mb-4">
+          Create Certificate Group
+        </h1>
+
+        {/* STEP 1 */}
         {currentStep === 1 && (
           <Card data-aos="fade-up">
             <CardContent className="p-8 space-y-6">
               <div>
-                <Label htmlFor="courseTitle" className="text-lg font-semibold text-slate-900 mb-2 block">
+                <Label className="text-lg font-semibold text-slate-900 mb-2 block">
                   Course Title
                 </Label>
                 <Input
-                  id="courseTitle"
-                  placeholder="e.g., Web Development Bootcamp 2025"
+                  placeholder="e.g., Web Development Bootcamp"
                   className="py-6 text-lg rounded-xl"
-                  data-testid="course-title-input"
+                  value={courseTitle}
+                  onChange={(e) => setCourseTitle(e.target.value)}
                 />
               </div>
-              
+
               <div>
-                <Label htmlFor="description" className="text-lg font-semibold text-slate-900 mb-2 block">
+                <Label className="text-lg font-semibold text-slate-900 mb-2 block">
                   Description
                 </Label>
                 <Textarea
-                  id="description"
-                  placeholder="Brief description of the course or program..."
                   rows={4}
                   className="text-lg rounded-xl"
-                  data-testid="course-description-input"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                 />
               </div>
-              
+
               <div>
-                <Label htmlFor="learners" className="text-lg font-semibold text-slate-900 mb-2 block">
+                <Label className="text-lg font-semibold text-slate-900 mb-2 block">
                   Number of Learners
                 </Label>
                 <Input
-                  id="learners"
                   type="number"
-                  placeholder="50"
                   className="py-6 text-lg rounded-xl"
-                  data-testid="learner-count-input"
+                  value={learners}
+                  onChange={(e) => setLearners(Number(e.target.value))}
                 />
-                <p className="text-sm text-slate-500 mt-2">
-                  Free plan allows up to 50 learners. <a href="/pricing" className="text-blue-600 hover:underline">Upgrade for more</a>
-                </p>
               </div>
-              
-              <div className="flex justify-end pt-4">
+
+              <div className="flex justify-end">
                 <Button
                   onClick={() => setCurrentStep(2)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl"
-                  data-testid="step1-next-button"
+                  className="bg-blue-600 text-white px-8 py-6 rounded-xl"
                 >
                   Continue to Template Designer
-                  <ArrowRight className="ml-2 w-5 h-5" />
+                  <ArrowRight className="ml-2" />
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
-        
-        {/* Step 2: Template Designer */}
+
+        {/* STEP 2 (Designer) */}
         {currentStep === 2 && (
           <div className="space-y-6" data-aos="fade-up">
             <Card>
               <CardContent className="p-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-6">Upload Certificate Background</h2>
-                <div className="border-2 border-dashed border-slate-300 rounded-xl p-12 text-center hover:border-blue-500 transition-colors cursor-pointer">
+                <div
+                  className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center hover:border-blue-500 transition-colors cursor-pointer"
+                  onClick={() => fileInputRef.current?.click()}
+                >
                   <Upload className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                  <p className="text-lg text-slate-700 font-medium mb-2">Click to upload or drag and drop</p>
+                  <p className="text-lg text-slate-700 font-medium mb-2">
+                    {loading ? "Uploading..." : "Click to upload or drag and drop"}
+                  </p>
                   <p className="text-sm text-slate-500">PDF files only (Max 5MB)</p>
+                  {pdfFile && <p className="text-sm text-green-600 mt-2">✓ {pdfFile.name} selected</p>}
+                  <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={onSelectFile} />
                 </div>
               </CardContent>
             </Card>
-            
+
             <Card>
               <CardContent className="p-8">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-2xl font-bold text-slate-900">Design Your Template</h2>
-                  <Button onClick={addField} className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Field
-                  </Button>
-                </div>
-                
-                {/* Canvas Preview */}
-                <div className="bg-slate-100 rounded-xl p-8 mb-6 min-h-[500px] relative border-2 border-slate-300">
-                  <div className="absolute inset-8 bg-white rounded-lg shadow-lg flex items-center justify-center">
-                    <div className="text-center text-slate-400">
-                      <Award className="w-16 h-16 mx-auto mb-4" />
-                      <p className="text-lg">Certificate Preview</p>
-                      <p className="text-sm">Upload a PDF to see your template</p>
-                    </div>
+                  <div className="flex items-center gap-3">
+                    <Button onClick={addField} className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Field
+                    </Button>
+
+                    {/* Add QR Code button */}
+                    <Button onClick={addQrCode} className="bg-purple-600 hover:bg-purple-700 text-white rounded-xl">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add QR Code
+                    </Button>
+
+                    <Button variant="outline" onClick={() => setFields([{ id: Date.now().toString(), type: "text", label: "Recipient Name", x: 50, y: 80, width: 250, height: 36 }])}>
+                      Reset Fields
+                    </Button>
                   </div>
-                  
-                  {/* Draggable Fields Overlay */}
-                  {fields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="absolute bg-blue-100 border-2 border-blue-500 rounded-lg p-3 cursor-move hover:bg-blue-200 transition-colors"
-                      style={{
-                        left: `${field.x}px`,
-                        top: `${field.y}px`,
-                        width: `${field.width}px`,
-                        minHeight: `${field.height}px`,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <GripVertical className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm font-medium text-blue-900 flex-1">{field.label}</span>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-6 w-6 hover:bg-red-100"
-                          onClick={() => removeField(field.id)}
-                        >
-                          <Trash2 className="w-3 h-3 text-red-600" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
                 </div>
-                
-                {/* Field List */}
-                <div className="space-y-3">
+
+                <div className="bg-slate-100 rounded-xl p-4 min-h-[560px] relative border-2 border-slate-300">
+                  <div ref={previewRef} className="relative mx-auto bg-white shadow-md rounded-md" style={{ width: "800px", height: "560px", overflow: "hidden" }}>
+                    {pdfUrl ? (
+                      <>
+                        <iframe 
+                          src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} 
+                          width="100%" 
+                          height="100%"
+                          style={{ border: 'none', pointerEvents: 'none', position: 'absolute', top: 0, left: 0 }}
+                          title="PDF Preview"
+                        />
+                        {fields.map((f) => {
+                          const leftPct = (f.x / 800) * 100;
+                          const topPct = (f.y / 560) * 100;
+                          const widthPct = (f.width / 800) * 100;
+                          const heightPct = (f.height / 560) * 100;
+
+                          return (
+                            <div key={f.id} style={{
+                              position: "absolute",
+                              left: `${leftPct}%`,
+                              top: `${topPct}%`,
+                              width: `${widthPct}%`,
+                              height: `${heightPct}%`,
+                              background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.9)",
+                              border: "2px solid #3b82f6",
+                              borderRadius: 8,
+                              boxSizing: "border-box",
+                              zIndex: 10,
+                              display: "flex",
+                              flexDirection: "column",
+                            }}>
+                              {f.type === "text" ? (
+                                <div onMouseDown={(e) => startDrag(e, f.id)} onTouchStart={(e) => startDrag(e, f.id)} className="flex items-center gap-2 p-2" style={{ flex: 1 }}>
+                                  <GripVertical className="w-4 h-4 text-blue-600" />
+                                  <input value={f.label} onChange={(e) => updateLabel(f.id, e.target.value)} onClick={(e) => e.stopPropagation()} className="bg-transparent border-none outline-none text-blue-900 text-sm font-medium flex-1" />
+                                  <button onClick={(e) => { e.stopPropagation(); removeField(f.id); }} className="ml-1 hover:bg-red-100 rounded p-1">
+                                    <Trash2 className="w-4 h-4 text-red-600" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                                  <img src={f.qrImage} alt="qr" draggable={false} style={{ width: "100%", height: "100%", objectFit: "contain", pointerEvents: 'none' }} />
+                                  <button onClick={(e) => { e.stopPropagation(); removeField(f.id); }} style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(255,255,255,0.9)', borderRadius: 6, padding: 4 }}>
+                                    <Trash2 className="w-4 h-4 text-red-600" />
+                                  </button>
+                                  {/* allow dragging from image area */}
+                                  <div onMouseDown={(e) => startDrag(e, f.id)} onTouchStart={(e) => startDrag(e, f.id)} style={{ position: 'absolute', inset: 0, cursor: 'move' }} />
+                                </div>
+                              )}
+
+                              {/* resize handle */}
+                              <div onMouseDown={(e) => startResize(e, f.id, "br")} onTouchStart={(e) => startResize(e, f.id, "br")}
+                                style={{
+                                  position: "absolute",
+                                  bottom: -6,
+                                  right: -6,
+                                  width: 12,
+                                  height: 12,
+                                  background: "#3b82f6",
+                                  border: "2px solid white",
+                                  borderRadius: "50%",
+                                  cursor: "nwse-resize",
+                                  zIndex: 20,
+                                }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-400">
+                        <div className="text-center">
+                          <Upload className="mx-auto mb-2 w-12 h-12" />
+                          <div className="text-sm">Upload a PDF to preview the template</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-3 mt-6">
                   <h3 className="font-semibold text-slate-900">Template Fields ({fields.length})</h3>
-                  {fields.map((field) => (
-                    <div key={field.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                  {fields.map((f) => (
+                    <div key={f.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
                       <GripVertical className="w-5 h-5 text-slate-400" />
-                      <Input
-                        value={field.label}
-                        onChange={(e) => {
-                          const updated = fields.map(f => f.id === field.id ? {...f, label: e.target.value} : f);
-                          setFields(updated);
-                        }}
-                        className="flex-1 rounded-lg"
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="hover:bg-red-100"
-                        onClick={() => removeField(field.id)}
-                      >
+                      <div className="flex-1">
+                        {f.type === "text" ? <Input value={f.label} onChange={(e) => updateLabel(f.id, e.target.value)} className="rounded-lg" /> : <div className="text-sm">QR Code</div>}
+                      </div>
+                      <div className="text-sm text-slate-600">x:{Math.round(f.x)} y:{Math.round(f.y)} w:{Math.round(f.width)} h:{Math.round(f.height)}</div>
+                      <Button size="icon" variant="ghost" className="hover:bg-red-100" onClick={() => removeField(f.id)}>
                         <Trash2 className="w-4 h-4 text-red-600" />
                       </Button>
                     </div>
                   ))}
                 </div>
-                
+
                 <div className="flex justify-between pt-6">
-                  <Button
-                    variant="outline"
-                    onClick={() => setCurrentStep(1)}
-                    className="px-8 py-6 rounded-xl"
-                  >
+                  <Button variant="outline" onClick={() => setCurrentStep(1)} className="px-8 py-6 rounded-xl">
                     <ArrowLeft className="mr-2 w-5 h-5" />
                     Back
                   </Button>
-                  <Button
-                    onClick={() => setCurrentStep(3)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl"
-                    data-testid="step2-next-button"
-                  >
+                  <Button onClick={() => setCurrentStep(3)} className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl">
                     Continue to Finalize
                     <ArrowRight className="ml-2 w-5 h-5" />
                   </Button>
@@ -248,70 +708,138 @@ export const CreateCertificatePage = () => {
             </Card>
           </div>
         )}
-        
-        {/* Step 3: Finalize & Deploy */}
+
+        {/* STEP 3: Preview & Deploy */}
         {currentStep === 3 && (
           <div className="space-y-6" data-aos="fade-up">
             <Card>
               <CardContent className="p-8">
-                <h2 className="text-2xl font-bold text-slate-900 mb-6">Form Preview</h2>
-                <p className="text-slate-600 mb-6">This is what learners will see when claiming their certificate</p>
-                
-                <div className="bg-slate-50 rounded-xl p-8 border-2 border-slate-200">
-                  <div className="max-w-md mx-auto bg-white rounded-xl p-8 shadow-lg">
-                    <h3 className="text-2xl font-bold text-slate-900 mb-6">Claim Your Certificate</h3>
-                    <div className="space-y-4">
-                      {fields.map((field) => (
-                        <div key={field.id}>
-                          <Label className="text-slate-700 font-medium mb-2 block">{field.label}</Label>
-                          <Input placeholder={`Enter ${field.label.toLowerCase()}`} className="rounded-lg" />
+                <h2 className="text-2xl font-bold text-slate-900 mb-6">Certificate Preview</h2>
+                <div className="bg-slate-100 rounded-xl p-4 border-2 border-slate-300">
+                  <div className="relative mx-auto bg-white shadow-md rounded-md" style={{ width: "800px", height: "560px", overflow: "hidden" }}>
+                    {pdfUrl ? (
+                      <>
+                        <iframe 
+                          src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} 
+                          width="100%" 
+                          height="100%"
+                          style={{ border: 'none', pointerEvents: 'none', position: 'absolute', top: 0, left: 0 }}
+                          title="Certificate Preview"
+                        />
+                        {fields.map((f) => {
+                          const leftPct = (f.x / 800) * 100;
+                          const topPct = (f.y / 560) * 100;
+                          const widthPct = (f.width / 800) * 100;
+                          const heightPct = (f.height / 560) * 100;
+
+                          return (
+                            <div key={f.id} style={{
+                              position: "absolute",
+                              left: `${leftPct}%`,
+                              top: `${topPct}%`,
+                              width: `${widthPct}%`,
+                              height: `${heightPct}%`,
+                              background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
+                              border: "2px solid #3b82f6",
+                              borderRadius: 8,
+                              padding: "6px 8px",
+                              boxSizing: "border-box",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              zIndex: 10,
+                            }}>
+                              {f.type === "text" ? <span className="text-blue-900 text-sm font-medium">{f.label}</span> : <img src={f.qrImage} alt="qr" style={{ width: "100%", height: "100%", objectFit: "contain" }} />}
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-400">
+                        <div className="text-center">
+                          <Upload className="mx-auto mb-2 w-12 h-12" />
+                          <div className="text-sm">No template uploaded</div>
                         </div>
-                      ))}
-                      <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-xl mt-6">
-                        Claim Certificate
-                      </Button>
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </CardContent>
             </Card>
-            
+
             <Card className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-200">
               <CardContent className="p-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-4">Ready to Deploy?</h2>
-                <p className="text-slate-600 mb-6">
-                  Once deployed, you'll receive a unique join code and shareable link that learners can use to claim their certificates.
-                </p>
-                
+                <p className="text-slate-600 mb-6">Once deployed, you'll receive a unique join code that learners can use to claim their certificates.</p>
                 <div className="flex justify-between">
-                  <Button
-                    variant="outline"
-                    onClick={() => setCurrentStep(2)}
-                    className="px-8 py-6 rounded-xl"
-                  >
+                  <Button variant="outline" onClick={() => setCurrentStep(2)} className="px-8 py-6 rounded-xl">
                     <ArrowLeft className="mr-2 w-5 h-5" />
                     Back
                   </Button>
-                  <Button
-                    className="bg-green-600 hover:bg-green-700 text-white px-8 py-6 rounded-xl shadow-lg"
-                    data-testid="deploy-group-button"
-                  >
-                    <Check className="mr-2 w-5 h-5" />
-                    Deploy Group
+                  <div className="flex items-center gap-3">
+                    <Button variant="outline" onClick={openFullPreview} className="px-6 py-3">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      Open Full Preview
+                    </Button>
+                    <Button className="bg-green-600 hover:bg-green-700 text-white px-8 py-6 rounded-xl shadow-lg" onClick={deployGroup} disabled={loading}>
+                      {loading ? "Deploying..." : <>
+                        <Check className="mr-2 w-5 h-5" />
+                        Deploy Group
+                      </>}
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* STEP 4: Success */}
+        {currentStep === 4 && deployedGroup && (
+          <div className="space-y-6" data-aos="fade-up">
+            <Card className="bg-gradient-to-br from-green-50 to-white border-2 border-green-200">
+              <CardContent className="p-8 text-center">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <CheckCircle className="w-12 h-12 text-green-600" />
+                </div>
+                <h2 className="text-3xl font-bold text-slate-900 mb-4">Group Deployed Successfully!</h2>
+                <p className="text-slate-600 mb-8">Your certificate group is now live. Share the join code below with your learners.</p>
+
+                <div className="max-w-md mx-auto space-y-4">
+                  <div className="bg-white rounded-xl p-6 border-2 border-green-300">
+                    <Label className="text-sm text-slate-600 mb-2 block">Join Code</Label>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 bg-slate-100 rounded-lg px-4 py-3 font-mono text-2xl font-bold text-slate-900 tracking-wider">
+                        {deployedGroup.joinCode}
+                      </div>
+                      <Button onClick={copyJoinCode} className="bg-blue-600 hover:bg-blue-700 text-white">
+                        {copied ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3">
+                    <Button onClick={shareLink} variant="outline" className="flex-1 py-6 rounded-xl">
+                      <Share2 className="w-5 h-5 mr-2" />
+                      Share Link
+                    </Button>
+                    <Button onClick={() => navigate(`/dashboard/my-groups/${deployedGroup.groupId}`)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-xl">
+                      View Group Details
+                    </Button>
+                  </div>
+
+                  <Button onClick={() => navigate('/dashboard')} variant="ghost" className="w-full">
+                    Back to Dashboard
                   </Button>
                 </div>
               </CardContent>
             </Card>
           </div>
         )}
+
       </div>
     </DashboardLayout>
   );
 };
 
-const Award = ({ className }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <circle cx="12" cy="8" r="6"></circle>
-    <path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"></path>
-  </svg>
-);
+export default CreateCertificatePage;

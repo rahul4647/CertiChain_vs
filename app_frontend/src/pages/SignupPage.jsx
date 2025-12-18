@@ -1,12 +1,69 @@
-import React from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { Award, Mail, Lock, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { supabase } from '@/supabaseClient';
 
 export const SignupPage = () => {
+  const navigate = useNavigate();
+  
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: ""
+  });
+
+  const [loading, setLoading] = useState(false);
+
+  // -----------------------
+  // HANDLE INPUT CHANGE
+  // -----------------------
+  const handleChange = (e) => {
+    setForm({ ...form, [e.target.id]: e.target.value });
+  };
+
+  // -----------------------
+  // EMAIL/PASSWORD SIGNUP
+  // -----------------------
+  const handleSignup = async () => {
+    setLoading(true);
+
+    const { data, error } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: {
+        data: { full_name: form.name }, // Store user metadata
+      }
+    });
+
+    setLoading(false);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    alert("Please check your email to verify your account!");
+    navigate("/login");
+  };
+
+  // -----------------------
+  // GOOGLE SIGN-IN
+  // -----------------------
+  const loginWithGoogle = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: "http://localhost:3000/auth/callback",
+      }
+    });
+
+    if (error) alert(error.message);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-slate-100 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-md">
@@ -20,10 +77,12 @@ export const SignupPage = () => {
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Create Account</h1>
           <p className="text-slate-600">Start issuing certificates in minutes</p>
         </div>
-        
+
         <Card className="border-none shadow-2xl" data-aos="fade-up">
           <CardContent className="p-8">
-            <form className="space-y-5">
+            <form className="space-y-5" onSubmit={(e) => e.preventDefault()}>
+              
+              {/* Name */}
               <div>
                 <Label htmlFor="name" className="text-slate-700 font-medium mb-2 block">Full Name</Label>
                 <div className="relative">
@@ -32,12 +91,14 @@ export const SignupPage = () => {
                     id="name"
                     type="text"
                     placeholder="John Doe"
+                    value={form.name}
+                    onChange={handleChange}
                     className="pl-11 py-6 rounded-xl border-slate-300 focus:border-blue-500"
-                    data-testid="signup-name-input"
                   />
                 </div>
               </div>
-              
+
+              {/* Email */}
               <div>
                 <Label htmlFor="email" className="text-slate-700 font-medium mb-2 block">Email Address</Label>
                 <div className="relative">
@@ -46,12 +107,14 @@ export const SignupPage = () => {
                     id="email"
                     type="email"
                     placeholder="you@example.com"
+                    value={form.email}
+                    onChange={handleChange}
                     className="pl-11 py-6 rounded-xl border-slate-300 focus:border-blue-500"
-                    data-testid="signup-email-input"
                   />
                 </div>
               </div>
-              
+
+              {/* Password */}
               <div>
                 <Label htmlFor="password" className="text-slate-700 font-medium mb-2 block">Password</Label>
                 <div className="relative">
@@ -60,29 +123,24 @@ export const SignupPage = () => {
                     id="password"
                     type="password"
                     placeholder="••••••••"
+                    value={form.password}
+                    onChange={handleChange}
                     className="pl-11 py-6 rounded-xl border-slate-300 focus:border-blue-500"
-                    data-testid="signup-password-input"
                   />
                 </div>
               </div>
-              
-              <div className="text-sm text-slate-600">
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" className="w-4 h-4 mt-0.5 rounded border-slate-300 text-blue-600" />
-                  <span>
-                    I agree to the <a href="#" className="text-blue-600 hover:text-blue-700">Terms of Service</a> and <a href="#" className="text-blue-600 hover:text-blue-700">Privacy Policy</a>
-                  </span>
-                </label>
-              </div>
-              
-              <Button 
-                type="button" 
+
+              {/* Create Account */}
+              <Button
+                type="button"
+                onClick={handleSignup}
+                disabled={loading}
                 className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 text-lg rounded-xl shadow-lg hover:shadow-xl transition-all duration-300"
-                data-testid="signup-submit-button"
               >
-                Create Account
+                {loading ? "Creating..." : "Create Account"}
               </Button>
-              
+
+              {/* OR Divider */}
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-slate-300"></div>
@@ -91,11 +149,13 @@ export const SignupPage = () => {
                   <span className="px-4 bg-white text-slate-500">Or sign up with</span>
                 </div>
               </div>
-              
-              <Button 
-                type="button" 
-                variant="outline" 
-                className="w-full py-6 rounded-xl border-2 border-slate-300 hover:border-blue-500 transition-colors"
+
+              {/* Google Sign In */}
+              <Button
+                type="button"
+                variant="outline"
+                onClick={loginWithGoogle}
+                className="w-full py-6 rounded-xl border-2 border-slate-300 hover:border-blue-500 transition-colors flex items-center justify-center"
               >
                 <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
@@ -106,7 +166,7 @@ export const SignupPage = () => {
                 Sign up with Google
               </Button>
             </form>
-            
+
             <div className="mt-6 text-center text-slate-600">
               Already have an account? <Link to="/login" className="text-blue-600 hover:text-blue-700 font-medium">Sign in</Link>
             </div>

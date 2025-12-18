@@ -3,6 +3,7 @@ import '@/App.css';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
+import { AuthCallbackPage } from "./pages/AuthCallbackPage";
 
 // Pages
 import { LandingPage } from './pages/LandingPage';
@@ -27,6 +28,7 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <Routes>
+          <Route path="/auth/callback" element={<AuthCallbackPage />} />
           <Route path="/" element={<LandingPage />} />
           <Route path="/pricing" element={<PricingPage />} />
           <Route path="/login" element={<LoginPage />} />

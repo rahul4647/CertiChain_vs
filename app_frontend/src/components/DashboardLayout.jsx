@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Award, LayoutDashboard, FileText, Users, Settings, LogOut, Menu, X, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -9,12 +9,36 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { supabase } from "@/supabaseClient";   // ✅ Added
 
 export const DashboardLayout = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
+
+  // ---------------------------------------------
+  // ✅ Load User From Supabase
+  // ---------------------------------------------
+  const [user, setUser] = useState(null);
+
+  useEffect(() => {
+    const loadUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user || null);
+    };
+    loadUser();
+  }, []);
+
+  const fullName =
+    user?.user_metadata?.full_name ||
+    user?.email?.split("@")[0] ||
+    "User";
+
+  const avatar =
+    user?.user_metadata?.avatar_url ||
+    `https://api.dicebear.com/7.x/initials/svg?seed=${fullName}`;
+
+  // ---------------------------------------------
   const navigation = [
     { name: 'Dashboard', icon: LayoutDashboard, href: '/dashboard' },
     { name: 'My Groups', icon: Users, href: '/dashboard/my-groups' },
@@ -47,26 +71,44 @@ export const DashboardLayout = ({ children }) => {
             </Link>
           </div>
           
+          {/* ------------------------------------------------
+              ⭐ Updated Profile Dropdown (Dynamic User Info)
+             ------------------------------------------------ */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 hover:bg-slate-100">
                 <Avatar className="w-8 h-8">
-                  <AvatarFallback className="bg-blue-600 text-white font-semibold">JD</AvatarFallback>
+                  <AvatarImage src={avatar} alt={fullName} />
+                  <AvatarFallback className="bg-blue-600 text-white font-semibold">
+                    {fullName?.charAt(0).toUpperCase()}
+                  </AvatarFallback>
                 </Avatar>
-                <span className="hidden md:inline text-slate-900 font-medium">John Doe</span>
+                <span className="hidden md:inline text-slate-900 font-medium">
+                  {fullName}
+                </span>
               </Button>
             </DropdownMenuTrigger>
+
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuItem className="cursor-pointer">
                 <User className="w-4 h-4 mr-2" />
                 Profile
               </DropdownMenuItem>
+
               <DropdownMenuItem className="cursor-pointer">
                 <Settings className="w-4 h-4 mr-2" />
                 Settings
               </DropdownMenuItem>
+
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="cursor-pointer text-red-600">
+
+              <DropdownMenuItem
+                className="cursor-pointer text-red-600"
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  window.location.href = "/login";
+                }}
+              >
                 <LogOut className="w-4 h-4 mr-2" />
                 Logout
               </DropdownMenuItem>
@@ -91,7 +133,6 @@ export const DashboardLayout = ({ children }) => {
                   ? 'bg-blue-50 text-blue-600 font-medium'
                   : 'text-slate-700 hover:bg-slate-100'
               }`}
-              data-testid={`nav-${item.name.toLowerCase().replace(' ', '-')}`}
             >
               <item.icon className="w-5 h-5" />
               {item.name}
@@ -107,19 +148,16 @@ export const DashboardLayout = ({ children }) => {
               <Button size="sm" className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg">
                 Upgrade Now
               </Button>
-            </Link>ā
+            </Link>
           </div>
         </div>
       </aside>
       
       {/* Main Content */}
       <main className="pt-16 lg:pl-64">
-        <div className="p-8">
-          {children}
-        </div>
+        <div className="p-8">{children}</div>
       </main>
       
-      {/* Overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-30 lg:hidden"
@@ -129,5 +167,5 @@ export const DashboardLayout = ({ children }) => {
     </div>
   );
 };
-export default DashboardLayout;
 
+export default DashboardLayout;
