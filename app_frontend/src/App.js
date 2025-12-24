@@ -14,6 +14,8 @@ import { DashboardPage } from './pages/DashboardPage';
 import { CreateCertificatePage } from './pages/CreateCertificatePage';
 import { GroupDetailsPage } from './pages/GroupDetailsPage';
 import { ClaimPage } from './pages/ClaimPage';
+import {JoinGroupPage} from './pages/JoinGroupPage';
+import {StudentGroupView} from './pages/StudentGroupView';
 
 function App() {
   useEffect(() => {
@@ -37,6 +39,9 @@ function App() {
           <Route path="/dashboard/create-certificate" element={<CreateCertificatePage />} />
           <Route path="/dashboard/my-groups/:groupId" element={<GroupDetailsPage />} />
           <Route path="/claim/:joinCode" element={<ClaimPage />} />
+          <Route path="/join" element={<JoinGroupPage />} />
+          <Route path="/join/:joinCode" element={<JoinGroupPage />} />
+          <Route path="/student/group/:groupId" element={<StudentGroupView />} />
         </Routes>
       </BrowserRouter>
     </div>

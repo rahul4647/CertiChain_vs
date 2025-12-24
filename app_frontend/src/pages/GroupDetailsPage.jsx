@@ -16,12 +16,15 @@ export const GroupDetailsPage = () => {
 
   const [group, setGroup] = useState(null);
   const [issuedCertificates, setIssuedCertificates] = useState([]);
+  const [pdfPage, setPdfPage] = useState(null);
+  const canvasRef = useRef(null);
 
   // NEW STATE for template preview + fields
   const [template, setTemplate] = useState(null);
   const [fields, setFields] = useState([]);
 
   const [loading, setLoading] = useState(true);
+  const [pdfDimensions, setPdfDimensions] = useState({ width: 800, height: 560 });
 
   // Load group, template, fields, certificates
   useEffect(() => {
@@ -40,23 +43,38 @@ export const GroupDetailsPage = () => {
         setGroup(groupData);
 
         // Load template IF EXISTS
+        // Load template IF EXISTS
         if (groupData.template_id) {
           const { data: tmpl } = await supabase
             .from("certificate_templates")
             .select("*")
             .eq("id", groupData.template_id)
             .single();
-
           setTemplate(tmpl);
+
+          // NEW: Load PDF dimensions
+          // Replace the existing PDF dimensions loading code with:
+          if (tmpl?.pdf_url) {
+            try {
+              const loadingTask = window.pdfjsLib.getDocument(tmpl.pdf_url);
+              const pdf = await loadingTask.promise;
+              const page = await pdf.getPage(1);
+              setPdfPage(page);
+              const viewport = page.getViewport({ scale: 1 });
+              setPdfDimensions({ width: viewport.width, height: viewport.height });
+            } catch (err) {
+              console.error("Failed to load PDF:", err);
+              setPdfDimensions({ width: 800, height: 560 });
+            }
+          }
 
           const { data: flds } = await supabase
             .from("template_fields")
             .select("*")
             .eq("template_id", groupData.template_id)
             .order("created_at", { ascending: true });
-
           setFields(flds || []);
-        }
+}
 
         // Load issued certificates
         const { data: certs } = await supabase
@@ -88,6 +106,37 @@ export const GroupDetailsPage = () => {
     loadDetails();
   }, [groupId]);
 
+  useEffect(() => {
+  if (!pdfPage || !canvasRef.current) return;
+
+  const renderCanvas = async () => {
+    const canvas = canvasRef.current;
+    const container = canvas.parentElement;
+    
+    if (!container) return;
+
+    const containerWidth = container.offsetWidth;
+    const scale = containerWidth / pdfDimensions.width;
+    
+    const viewport = pdfPage.getViewport({ scale });
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    const context = canvas.getContext('2d');
+    
+    try {
+      await pdfPage.render({
+        canvasContext: context,
+        viewport: viewport
+      }).promise;
+    } catch (err) {
+      console.error("Canvas render error:", err);
+    }
+  };
+
+  renderCanvas();
+}, [pdfPage, pdfDimensions]);
+
 
   // Copy Button
   const copyToClipboard = (text) => {
@@ -95,79 +144,144 @@ export const GroupDetailsPage = () => {
     toast.success("Copied!");
   };
   // Open certificate preview in popup (FULL PREVIEW)
-  const openCertificatePreview = () => {
-    if (!template) return;
+  const openCertificatePreview = async () => {
+  if (!template || !pdfPage) return;
+  
+  const popup = window.open(
+    "",
+    "certificatePreview",
+    "width=1400,height=900,resizable=yes,scrollbars=yes"
+  );
+  
+  if (!popup) {
+    toast.error("Please allow popups to view full preview");
+    return;
+  }
 
-    const popup = window.open(
-      "",
-      "certificatePreview",
-      "width=1200,height=850,resizable=yes,scrollbars=yes"
-    );
+  const displayWidth = 1200;
+  const scale = displayWidth / pdfDimensions.width;
+  const displayHeight = pdfDimensions.height * scale;
 
-    if (!popup) return;
+  // Render PDF to canvas
+  const tempCanvas = document.createElement('canvas');
+  const viewport = pdfPage.getViewport({ scale });
+  tempCanvas.width = viewport.width;
+  tempCanvas.height = viewport.height;
+  const context = tempCanvas.getContext('2d');
+  
+  await pdfPage.render({
+    canvasContext: context,
+    viewport: viewport
+  }).promise;
 
-    popup.document.write(`
-      <html>
-        <head>
-          <title>Certificate Preview</title>
-          <style>
-            body {
-              margin: 0;
-              padding: 40px;
-              background: #f1f5f9;
-              display: flex;
-              justify-content: center;
+  const pdfDataUrl = tempCanvas.toDataURL('image/png');
+  
+  popup.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Certificate Preview - ${group.name}</title>
+        <meta charset="UTF-8">
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            margin: 0;
+            padding: 40px;
+            background: #f1f5f9;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+          }
+          .canvas {
+            position: relative;
+            width: ${displayWidth}px;
+            height: ${displayHeight}px;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+          }
+          .pdf-image {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+          }
+          .field {
+            position: absolute;
+            background: rgba(219,234,254,0.85);
+            border: 2px solid #3b82f6;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: inherit;
+            color: #1e3a8a;
+            font-weight: 600;
+            padding: 8px 12px;
+            box-sizing: border-box;
+          }
+          .qr-container {
+            position: absolute;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+          }
+          .qr-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="canvas">
+          <img src="${pdfDataUrl}" class="pdf-image" alt="Certificate" />
+          ${fields.map(f => {
+            const leftPx = f.x * scale;
+            const topPx = f.y * scale;
+            const widthPx = f.width * scale;
+            const heightPx = f.height * scale;
+            
+            if (f.type === "qr") {
+              return `
+                <div class="qr-container" style="
+                  left: ${leftPx}px;
+                  top: ${topPx}px;
+                  width: ${widthPx}px;
+                  height: ${heightPx}px;
+                ">
+                  <img src="${f.qr_image}" class="qr-img" alt="QR Code" />
+                </div>
+              `;
+            } else {
+              const fontSize = Math.max(12, heightPx * 0.4);
+              return `
+                <div class="field" style="
+                  left: ${leftPx}px;
+                  top: ${topPx}px;
+                  width: ${widthPx}px;
+                  height: ${heightPx}px;
+                  font-size: ${fontSize}px;
+                ">
+                  ${f.label || ""}
+                </div>
+              `;
             }
-            .canvas {
-              position: relative;
-              width: 800px;
-              height: 560px;
-              background: white;
-              border-radius: 12px;
-              overflow: hidden;
-              box-shadow: 0 25px 60px rgba(0,0,0,0.25);
-            }
-            .field {
-              position: absolute;
-              background: rgba(219,234,254,0.8);
-              border: 2px solid #3b82f6;
-              border-radius: 6px;
-              font-size: 13px;
-              font-family: system-ui, sans-serif;
-              color: #1e3a8a;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              box-sizing: border-box;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="canvas">
-            <iframe
-              src="${template.pdf_url}#toolbar=0&navpanes=0&scrollbar=0"
-              style="position:absolute; inset:0; width:100%; height:100%; border:none; pointer-events:none;"
-            ></iframe>
-
-            ${fields.map(f => `
-              <div class="field" style="
-                left:${f.x}px;
-                top:${f.y}px;
-                width:${f.width}px;
-                height:${f.height}px;
-              ">
-                ${f.label || ""}
-              </div>
-            `).join("")}
-          </div>
-        </body>
-      </html>
-    `);
-
-    popup.document.close();
-    popup.focus();
-  };
-
+          }).join("")}
+        </div>
+      </body>
+    </html>
+  `);
+  
+  popup.document.close();
+  popup.focus();
+};
+  
 
 
   if (loading || !group) {
@@ -319,33 +433,117 @@ export const GroupDetailsPage = () => {
 
           {/* CERTIFICATE PREVIEW */}
           {/* CERTIFICATE PREVIEW */}
-            <Card>
-              <CardHeader className="border-b border-slate-200">
-                <CardTitle className="text-xl font-bold text-slate-900">
-                  Certificate Preview
-                </CardTitle>
-              </CardHeader>
-
-              <CardContent className="p-6">
-                {!template ? (
-                  <div className="bg-slate-100 rounded-xl p-8 aspect-[4/3] flex items-center justify-center">
-                    <div className="text-center text-slate-400">
-                      <Award className="w-16 h-16 mx-auto mb-4" />
-                      <p className="text-sm">Certificate Template</p>
-                    </div>
+          <Card>
+            <CardHeader className="border-b border-slate-200">
+              <CardTitle className="text-xl font-bold text-slate-900">
+                Certificate Preview
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              {!template ? (
+                <div className="bg-slate-100 rounded-xl p-8 aspect-[4/3] flex items-center justify-center">
+                  <div className="text-center text-slate-400">
+                    <Award className="w-16 h-16 mx-auto mb-4" />
+                    <p className="text-sm">Certificate Template</p>
                   </div>
-                ) : (
-                  <div className="bg-slate-100 rounded-xl p-8 flex items-center justify-center">
-                    <Button
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl text-lg"
-                      onClick={() => openCertificatePreview()}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Inline preview thumbnail */}
+                  {/* Inline preview thumbnail */}
+                    <div 
+                      className="bg-slate-100 rounded-xl p-4 border-2 border-slate-300"
+                      style={{
+                        aspectRatio: `${pdfDimensions.width} / ${pdfDimensions.height}`
+                      }}
                     >
-                      Preview Certificate
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      <div 
+                        className="relative mx-auto bg-white shadow-md rounded-md overflow-hidden"
+                        style={{
+                          width: '100%',
+                          height: '100%'
+                        }}
+                      >
+                        <canvas 
+                          ref={canvasRef}
+                          style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'contain'
+                          }}
+                        />
+                        {fields.map((f) => {
+                          const leftPct = (f.x / pdfDimensions.width) * 100;
+                          const topPct = (f.y / pdfDimensions.height) * 100;
+                          const widthPct = (f.width / pdfDimensions.width) * 100;
+                          const heightPct = (f.height / pdfDimensions.height) * 100;
+
+                          return (
+                            <div 
+                              key={f.id}
+                              style={{
+                                position: "absolute",
+                                left: `${leftPct}%`,
+                                top: `${topPct}%`,
+                                width: `${widthPct}%`,
+                                height: `${heightPct}%`,
+                                background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
+                                border: "2px solid #3b82f6",
+                                borderRadius: 4,
+                                boxSizing: "border-box",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                zIndex: 10,
+                              }}
+                            >
+                              {f.type === "text" ? (
+                                <span 
+                                  style={{ 
+                                    padding: "2px 6px",
+                                    fontSize: "10px",
+                                    fontWeight: 600,
+                                    color: "#1e3a8a",
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    maxWidth: '100%'
+                                  }}
+                                >
+                                  {f.label}
+                                </span>
+                              ) : (
+                                <img 
+                                  src={f.qr_image} 
+                                  alt="qr" 
+                                  style={{ 
+                                    width: '90%', 
+                                    height: '90%', 
+                                    objectFit: 'contain' 
+                                  }} 
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  
+                  {/* Full preview button */}
+                  <Button
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 rounded-xl text-lg"
+                    onClick={openCertificatePreview}
+                  >
+                    <ExternalLink className="w-5 h-5 mr-2" />
+                    Open Full Preview
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
 
           {/* CLAIM FORM PREVIEW */}

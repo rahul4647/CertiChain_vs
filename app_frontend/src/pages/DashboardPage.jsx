@@ -76,15 +76,18 @@ export const DashboardPage = () => {
           </Card>
 
           {/* Join Group */}
-          <Card className="border-2 border-dashed border-slate-300 hover:border-green-500 hover:shadow-lg transition-all duration-300 cursor-pointer group">
-            <CardContent className="p-8 flex flex-col items-center justify-center text-center min-h-[200px]">
-              <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
-                <Users className="w-8 h-8 text-green-600" />
-              </div>
-              <h3 className="text-xl font-bold text-slate-900 mb-2">Join a Group</h3>
-              <p className="text-slate-600">Enter a join code to claim your certificate</p>
-            </CardContent>
-          </Card>
+          <Link to="/join">
+            {          <Card className="border-2 border-dashed border-slate-300 hover:border-green-500 hover:shadow-lg transition-all duration-300 cursor-pointer group">
+                            <CardContent className="p-8 flex flex-col items-center justify-center text-center min-h-[200px]">
+                              <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform duration-300">
+                                <Users className="w-8 h-8 text-green-600" />
+                              </div>
+                              <h3 className="text-xl font-bold text-slate-900 mb-2">Join a Group</h3>
+                              <p className="text-slate-600">Enter a join code to claim your certificate</p>
+                            </CardContent>
+                          </Card>}
+          </Link>
+
 
         </div>
 

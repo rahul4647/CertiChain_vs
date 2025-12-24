@@ -29,6 +29,7 @@ export const CreateCertificatePage = () => {
   const [courseTitle, setCourseTitle] = useState("");
   const [description, setDescription] = useState("");
   const [learners, setLearners] = useState(50);
+  const [pdfDimensions, setPdfDimensions] = useState({ width: 800, height: 560 });
 
   const [pdfFile, setPdfFile] = useState(null);
   const [pdfUrl, setPdfUrl] = useState(null);
@@ -182,24 +183,36 @@ export const CreateCertificatePage = () => {
     }
   };
 
-  const onSelectFile = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const onSelectFile = async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert("Max file size 5MB");
-      return;
-    }
+      if (file.size > 5 * 1024 * 1024) {
+        alert("Max file size 5MB");
+        return;
+      }
 
-    setPdfFile(file);
-    setLoading(true);
-    const url = await uploadPdfToStorage(file);
-    setLoading(false);
+      setPdfFile(file);
+      setLoading(true);
+      const url = await uploadPdfToStorage(file);
+      setLoading(false);
 
-    if (url) {
-      setPdfUrl(url);
-    }
-  };
+      if (url) {
+        setPdfUrl(url);
+        // Load PDF to get actual dimensions
+        const loadingTask = window.pdfjsLib.getDocument(url);
+        loadingTask.promise.then((pdf) => {
+          pdf.getPage(1).then((page) => {
+            const viewport = page.getViewport({ scale: 1 });
+            setPdfDimensions({ width: viewport.width, height: viewport.height });
+          });
+        }).catch((err) => {
+          console.error("Failed to load PDF dimensions:", err);
+          // Fallback to default landscape
+          setPdfDimensions({ width: 800, height: 560 });
+        });
+      }
+    };
 
   // ============================
   // FIELD ACTIONS
@@ -257,63 +270,64 @@ export const CreateCertificatePage = () => {
   // ============================
   useEffect(() => {
     const onMove = (e) => {
-      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
-      const rect = previewRef.current?.getBoundingClientRect();
-      if (!rect) return;
+    const rect = previewRef.current?.getBoundingClientRect();
+    if (!rect) return;
 
-      // DRAG
-      if (draggingRef.current.id) {
-        const { id, offsetX, offsetY } = draggingRef.current;
+    // DRAG
+    if (draggingRef.current.id) {
+      const { id, offsetX, offsetY } = draggingRef.current;
 
-        const displayedWidth = rect.width;
-        const displayedHeight = rect.height;
+      const displayedWidth = rect.width;
+      const displayedHeight = rect.height;
 
-        let newDisplayedX = clientX - rect.left - offsetX;
-        let newDisplayedY = clientY - rect.top - offsetY;
+      let newDisplayedX = clientX - rect.left - offsetX;
+      let newDisplayedY = clientY - rect.top - offsetY;
 
-        // clamp within canvas
-        newDisplayedX = Math.max(0, Math.min(newDisplayedX, displayedWidth));
-        newDisplayedY = Math.max(0, Math.min(newDisplayedY, displayedHeight));
+      // REMOVED CLAMPING - Allow fields to move anywhere
+      // No Math.max or Math.min restrictions
 
-        // convert displayed pixels back to base 800x560 coords
-        const baseX = Math.round((newDisplayedX / displayedWidth) * 800);
-        const baseY = Math.round((newDisplayedY / displayedHeight) * 560);
+      // Convert displayed pixels back to base coords
+      const baseX = Math.round((newDisplayedX / displayedWidth) * pdfDimensions.width);
+      const baseY = Math.round((newDisplayedY / displayedHeight) * pdfDimensions.height);
 
-        setFields((prev) => prev.map((f) => (f.id === id ? { ...f, x: baseX, y: baseY } : f)));
-      }
+      setFields((prev) => 
+        prev.map((f) => (f.id === id ? { ...f, x: baseX, y: baseY } : f))
+      );
+    }
 
-      // RESIZE (bottom-right corner only implemented)
-      if (resizingRef.current.id) {
-        const { id, startDisplayW, startDisplayH, startX, startY, corner } = resizingRef.current;
-        const dx = clientX - startX;
-        const dy = clientY - startY;
+    // RESIZE (bottom-right corner only implemented)
+    if (resizingRef.current.id) {
+      const { id, startDisplayW, startDisplayH, startX, startY, corner } = resizingRef.current;
+      const dx = clientX - startX;
+      const dy = clientY - startY;
 
-        const displayedWidth = rect.width;
-        const displayedHeight = rect.height;
+      const displayedWidth = rect.width;
+      const displayedHeight = rect.height;
 
-        setFields((prev) =>
-          prev.map((f) => {
-            if (f.id !== id) return f;
+      setFields((prev) =>
+        prev.map((f) => {
+          if (f.id !== id) return f;
 
-            let newDisplayW = startDisplayW;
-            let newDisplayH = startDisplayH;
+          let newDisplayW = startDisplayW;
+          let newDisplayH = startDisplayH;
 
-            if (corner === "br") {
-              newDisplayW = Math.max(30, startDisplayW + dx);
-              newDisplayH = Math.max(20, startDisplayH + dy);
-            }
+          if (corner === "br") {
+            newDisplayW = Math.max(30, startDisplayW + dx);
+            newDisplayH = Math.max(20, startDisplayH + dy);
+          }
 
-            // convert back to base units
-            const baseW = Math.round((newDisplayW / displayedWidth) * 800);
-            const baseH = Math.round((newDisplayH / displayedHeight) * 560);
+          // convert back to base units
+          const baseW = Math.round((newDisplayW / displayedWidth) * pdfDimensions.width);
+          const baseH = Math.round((newDisplayH / displayedHeight) * pdfDimensions.height);
 
-            return { ...f, width: baseW, height: baseH };
-          })
-        );
-      }
-    };
+          return { ...f, width: baseW, height: baseH };
+        })
+      );
+    }
+  };
 
     const onUp = () => {
       draggingRef.current = { id: null, offsetX: 0, offsetY: 0 };
@@ -596,40 +610,61 @@ export const CreateCertificatePage = () => {
                     </Button>
                   </div>
                 </div>
-
-                <div className="bg-slate-100 rounded-xl p-4 min-h-[560px] relative border-2 border-slate-300">
-                  <div ref={previewRef} className="relative mx-auto bg-white shadow-md rounded-md" style={{ width: "800px", height: "560px", overflow: "hidden" }}>
+                <div className="bg-slate-100 rounded-xl p-4 min-h-[400px] relative border-2 border-slate-300">
+                  <div 
+                    ref={previewRef} 
+                    className="relative mx-auto bg-white shadow-md rounded-md" 
+                    style={{ 
+                      width: "100%",
+                      maxWidth: "800px",
+                      aspectRatio: `${pdfDimensions.width} / ${pdfDimensions.height}`,
+                      overflow: "visible"  // CHANGED from "hidden" to "visible"
+                    }}
+                  >
                     {pdfUrl ? (
                       <>
                         <iframe 
                           src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} 
-                          width="100%" 
-                          height="100%"
-                          style={{ border: 'none', pointerEvents: 'none', position: 'absolute', top: 0, left: 0 }}
+                          style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0,
+                            width: '100%', 
+                            height: '100%',
+                            border: 'none', 
+                            pointerEvents: 'none',
+                            zIndex: 1  // ADDED: Keep PDF behind fields
+                          }}
                           title="PDF Preview"
                         />
                         {fields.map((f) => {
-                          const leftPct = (f.x / 800) * 100;
-                          const topPct = (f.y / 560) * 100;
-                          const widthPct = (f.width / 800) * 100;
-                          const heightPct = (f.height / 560) * 100;
+                          const leftPct = (f.x / pdfDimensions.width) * 100;
+                          const topPct = (f.y / pdfDimensions.height) * 100;
+                          const widthPct = (f.width / pdfDimensions.width) * 100;
+                          const heightPct = (f.height / pdfDimensions.height) * 100;
 
                           return (
-                            <div key={f.id} style={{
-                              position: "absolute",
-                              left: `${leftPct}%`,
-                              top: `${topPct}%`,
-                              width: `${widthPct}%`,
-                              height: `${heightPct}%`,
-                              background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.9)",
-                              border: "2px solid #3b82f6",
-                              borderRadius: 8,
-                              boxSizing: "border-box",
-                              zIndex: 10,
-                              display: "flex",
-                              flexDirection: "column",
-                            }}>
-                              {f.type === "text" ? (
+                            <div 
+                              key={f.id} 
+                              style={{
+                                position: "absolute",
+                                left: `${leftPct}%`,
+                                top: `${topPct}%`,
+                                width: `${widthPct}%`,
+                                height: `${heightPct}%`,
+                                background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.9)",
+                                border: "2px solid #3b82f6",
+                                borderRadius: 8,
+                                boxSizing: "border-box",
+                                zIndex: 100,  // CHANGED: Much higher z-index to be above everything
+                                display: "flex",
+                                flexDirection: "column",
+                                padding: 0,
+                                cursor: "move",  // ADDED: Show move cursor
+                                pointerEvents: "auto"  // ADDED: Ensure fields are clickable
+                              }}
+                            >
+                                              {f.type === "text" ? (
                                 <div onMouseDown={(e) => startDrag(e, f.id)} onTouchStart={(e) => startDrag(e, f.id)} className="flex items-center gap-2 p-2" style={{ flex: 1 }}>
                                   <GripVertical className="w-4 h-4 text-blue-600" />
                                   <input value={f.label} onChange={(e) => updateLabel(f.id, e.target.value)} onClick={(e) => e.stopPropagation()} className="bg-transparent border-none outline-none text-blue-900 text-sm font-medium flex-1" />
@@ -716,7 +751,15 @@ export const CreateCertificatePage = () => {
               <CardContent className="p-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-6">Certificate Preview</h2>
                 <div className="bg-slate-100 rounded-xl p-4 border-2 border-slate-300">
-                  <div className="relative mx-auto bg-white shadow-md rounded-md" style={{ width: "800px", height: "560px", overflow: "hidden" }}>
+                      <div 
+                        className="relative mx-auto bg-white shadow-md rounded-md" 
+                        style={{ 
+                          width: "100%",
+                          maxWidth: "800px",
+                          aspectRatio: `${pdfDimensions.width} / ${pdfDimensions.height}`,
+                          overflow: "hidden" 
+                        }}
+                      >
                     {pdfUrl ? (
                       <>
                         <iframe 
@@ -727,32 +770,52 @@ export const CreateCertificatePage = () => {
                           title="Certificate Preview"
                         />
                         {fields.map((f) => {
-                          const leftPct = (f.x / 800) * 100;
-                          const topPct = (f.y / 560) * 100;
-                          const widthPct = (f.width / 800) * 100;
-                          const heightPct = (f.height / 560) * 100;
+                        const leftPct = (f.x / pdfDimensions.width) * 100;
+                        const topPct = (f.y / pdfDimensions.height) * 100;
+                        const widthPct = (f.width / pdfDimensions.width) * 100;
+                        const heightPct = (f.height / pdfDimensions.height) * 100;
 
-                          return (
-                            <div key={f.id} style={{
-                              position: "absolute",
-                              left: `${leftPct}%`,
-                              top: `${topPct}%`,
-                              width: `${widthPct}%`,
-                              height: `${heightPct}%`,
-                              background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
-                              border: "2px solid #3b82f6",
-                              borderRadius: 8,
-                              padding: "6px 8px",
-                              boxSizing: "border-box",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              zIndex: 10,
-                            }}>
-                              {f.type === "text" ? <span className="text-blue-900 text-sm font-medium">{f.label}</span> : <img src={f.qrImage} alt="qr" style={{ width: "100%", height: "100%", objectFit: "contain" }} />}
-                            </div>
-                          );
-                        })}
+                        return (
+                          <div key={f.id} style={{
+                            position: "absolute",
+                            left: `${leftPct}%`,
+                            top: `${topPct}%`,
+                            width: `${widthPct}%`,
+                            height: `${heightPct}%`,
+                            background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
+                            border: "2px solid #3b82f6",
+                            borderRadius: 8,
+                            boxSizing: "border-box",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            zIndex: 10,
+                            // Remove padding that shifts content
+                            padding: 0,
+                          }}>
+                            {f.type === "text" ? (
+                              <span className="text-blue-900 text-sm font-medium" style={{
+                                padding: "6px 8px",
+                                width: "100%",
+                                textAlign: "center"
+                              }}>
+                                {f.label}
+                              </span>
+                            ) : (
+                              <img 
+                                src={f.qrImage} 
+                                alt="qr" 
+                                style={{ 
+                                  width: "100%", 
+                                  height: "100%", 
+                                  objectFit: "contain" 
+                                }} 
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
+
                       </>
                     ) : (
                       <div className="h-full flex items-center justify-center text-slate-400">
