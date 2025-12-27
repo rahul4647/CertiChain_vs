@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import DashboardLayout from '@/components/DashboardLayout';
 import { supabase } from "@/supabaseClient";
+import WalletConnect from '@/components/WalletConnect';
 
 export const DashboardPage = () => {
 
@@ -52,11 +53,17 @@ export const DashboardPage = () => {
   return (
     <DashboardLayout>
       <div className="space-y-8">
-
-        {/* HEADER */}
-        <div data-aos="fade-down">
-          <h1 className="text-4xl font-bold text-slate-900 mb-2">Dashboard</h1>
-          <p className="text-slate-600">Manage your certificate groups and view your achievements</p>
+                {/* HEADER */}
+        <div data-aos="fade-down" className="flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 mb-2">Dashboard</h1>
+            <p className="text-slate-600">Manage your certificate groups and view your achievements</p>
+          </div>
+          
+          {/* ADD THIS */}
+          <div className="flex items-center gap-4">
+            <WalletConnect />
+          </div>
         </div>
 
         {/* QUICK ACTIONS */}
