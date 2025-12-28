@@ -199,16 +199,20 @@ async def claim_certificate(claim: CertificateClaimRequest):
         group = group_response.data
         
         # Get instructor/issuer info
-        issuer_response = supabase.table("profiles").select("*").eq("id", group["created_by"]).single().execute()
-        if not issuer_response.data or not issuer_response.data.get("wallet_address"):
-            # Generate temp wallet if not exists
+        # Try instructors table first
+        try:
+            issuer_response = supabase.table("instructors").select("*").eq("id", group["instructor_id"]).single().execute()
+            if issuer_response.data and issuer_response.data.get("wallet_address"):
+                issuer = issuer_response.data
+                issuer_wallet = issuer["wallet_address"]
+                issuer_private_key = issuer.get("private_key_encrypted")
+            else:
+                raise Exception("No instructor found")
+        except:
+            # Fallback: Generate temp wallet if not exists
             temp_account = Account.create()
             issuer_wallet = temp_account.address
             issuer_private_key = temp_account.key.hex()
-        else:
-            issuer = issuer_response.data
-            issuer_wallet = issuer["wallet_address"]
-            issuer_private_key = issuer.get("private_key_encrypted")
         
         # Get template (optional)
         template = None
@@ -269,32 +273,22 @@ async def claim_certificate(claim: CertificateClaimRequest):
             recipient_email=claim.recipient_email
         )
         
-        # Save certificate to database
+        # Save certificate to database (matching your schema)
         supabase.table("certificates").insert({
             "certificate_id": certificate_id,
             "group_id": group["id"],
-            "template_id": group.get("template_id"),
-            "recipient_name": claim.recipient_name,
-            "recipient_email": claim.recipient_email,
-            "student_id": claim.student_id,
-            "recipient_wallet": nft_result.get("recipient_wallet"),
-            "issuer_name": "Instructor",
-            "issuer_wallet": issuer_wallet,
-            "issuer_user_id": group["created_by"],
+            "claimed_by_user_id": None,  # Will be set when user logs in
             "canonical_payload": certificate_data,
             "certificate_hash": certificate_hash,
             "issuer_signature": issuer_signature,
             "nft_id": nft_result.get("nft_id"),
+            "contract_address": nft_result.get("contract_address", ""),
             "token_id": nft_result.get("token_id"),
             "blockchain_tx": nft_result.get("transaction_hash"),
-            "chain": "polygon",
-            "pdf_ipfs_cid": ipfs_cid,
-            "pdf_ipfs_url": ipfs_url,
-            "qr_code_data": qr_data,
+            "ipfs_url": ipfs_url,
             "verification_url": verification_url,
-            "status": "minted",
-            "claimed_at": datetime.utcnow().isoformat(),
-            "minted_at": datetime.utcnow().isoformat()
+            "status": "valid",
+            "issued_at": datetime.utcnow().isoformat()
         }).execute()
         
         return {
