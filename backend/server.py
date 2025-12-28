@@ -365,7 +365,9 @@ async def verify_certificate(certificate_id: str):
         canonical_payload = json.dumps(cert["canonical_payload"])
         certificate_hash = cert["certificate_hash"]
         issuer_signature = cert["issuer_signature"]
-        issuer_wallet = cert["issuer_wallet"]
+        
+        # Get issuer wallet from canonical_payload
+        issuer_wallet = cert["canonical_payload"].get("issuerWallet", "")
         
         # Verification checks
         recalculated_hash = hash_message(canonical_payload)
@@ -384,18 +386,18 @@ async def verify_certificate(certificate_id: str):
             "certificateId": certificate_id,
             "certificate": {
                 "recipient": {
-                    "name": cert["recipient_name"],
-                    "email": cert["recipient_email"],
-                    "studentId": cert.get("student_id", ""),
-                    "wallet": cert.get("recipient_wallet", "")
+                    "name": cert["canonical_payload"].get("recipientName", ""),
+                    "email": cert["canonical_payload"].get("recipientEmail", ""),
+                    "studentId": cert["canonical_payload"].get("studentId", ""),
+                    "wallet": ""
                 },
                 "course": {
                     "name": cert["canonical_payload"].get("courseName", ""),
-                    "completionDate": cert["claimed_at"][:10] if cert.get("claimed_at") else ""
+                    "completionDate": cert["issued_at"][:10] if cert.get("issued_at") else ""
                 },
                 "issuer": {
-                    "name": cert["issuer_name"],
-                    "wallet": cert["issuer_wallet"],
+                    "name": cert["canonical_payload"].get("issuerName", ""),
+                    "wallet": issuer_wallet,
                     "totalCertificatesIssued": 1,
                     "verified": True
                 }
@@ -415,27 +417,27 @@ async def verify_certificate(certificate_id: str):
                 "blockchainNFT": {
                     "status": nft_status,
                     "message": "NFT minted on Polygon blockchain" if nft_exists else "NFT not found",
-                    "chain": cert.get("chain", "polygon"),
-                    "contractAddress": "",
+                    "chain": "polygon",
+                    "contractAddress": cert.get("contract_address", ""),
                     "tokenId": cert.get("token_id", ""),
                     "transaction": cert.get("blockchain_tx", "")
                 },
                 "receiverOwnership": {
                     "status": "✅ VERIFIED",
                     "message": "Owned by original recipient",
-                    "currentOwner": cert.get("recipient_wallet", "")
+                    "currentOwner": ""
                 }
             },
             "blockchain": {
-                "chain": cert.get("chain", "polygon"),
-                "contractAddress": "",
+                "chain": "polygon",
+                "contractAddress": cert.get("contract_address", ""),
                 "tokenId": cert.get("token_id", ""),
                 "transactionHash": cert.get("blockchain_tx", ""),
                 "explorerUrl": f"https://polygonscan.com/tx/{cert.get('blockchain_tx', '')}" if cert.get("blockchain_tx") else ""
             },
             "storage": {
-                "ipfsUrl": cert.get("pdf_ipfs_url", ""),
-                "ipfsGateway": f"https://ipfs.io/ipfs/{cert.get('pdf_ipfs_cid', '')}" if cert.get("pdf_ipfs_cid") else ""
+                "ipfsUrl": cert.get("ipfs_url", ""),
+                "ipfsGateway": f"https://ipfs.io/ipfs/{cert.get('ipfs_url', '').replace('ipfs://', '')}" if cert.get("ipfs_url") else ""
             }
         }
     except Exception as e:
