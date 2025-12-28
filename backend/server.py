@@ -186,7 +186,7 @@ async def create_nft_collection(collection: CollectionCreate):
             }).execute()
             return data
     except Exception as e:
-
+        raise HTTPException(status_code=500, detail=f"Collection creation failed: {str(e)}")
 
 @app.post("/api/certificates/claim")
 async def claim_certificate(claim: CertificateClaimRequest):
