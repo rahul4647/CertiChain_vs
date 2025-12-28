@@ -125,11 +125,9 @@ async def create_group(group: GroupCreate):
         response = supabase.table("groups").insert({
             "name": group.name,
             "description": group.description,
-            "created_by": group.creator_user_id,
-            "max_learners": group.max_learners,
-            "status": "active",
+            "instructor_id": group.creator_user_id,
             "join_code": join_code,
-            "learner_count": 0
+            "status": "active"
         }).execute()
         if not response.data:
             raise HTTPException(status_code=500, detail="Failed to create group")
