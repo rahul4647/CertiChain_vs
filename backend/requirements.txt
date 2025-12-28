@@ -1,0 +1,16 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+python-dotenv==1.0.1
+supabase==2.10.0
+httpx==0.28.1
+pydantic==2.10.3
+pydantic-settings==2.6.1
+eth-account==0.13.4
+eth-utils==5.1.0
+web3==7.6.0
+qrcode[pil]==8.0
+Pillow==11.0.0
+reportlab==4.2.5
+PyPDF2==3.0.1
+python-multipart==0.0.20
+cryptography==44.0.0
