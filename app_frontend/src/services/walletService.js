@@ -1,21 +1,22 @@
 import { supabase } from '@/supabaseClient';
-import { ethers } from 'ethers';
+import { Wallet } from 'ethers';
 
-// Encryption key - store in env variable in production!
-const ENCRYPTION_KEY = process.env.REACT_APP_WALLET_ENCRYPTION_KEY || 'your-secret-key-change-in-production';
-
-// Simple encryption (use proper encryption in production!)
+// ⚠️ MVP ONLY — replace with real encryption later
 function encrypt(text) {
-  // In production, use crypto-js or similar
-  return btoa(text); // Basic base64 for demo
+  return btoa(text);
 }
 
-function decrypt(encrypted) {
-  return atob(encrypted);
+function decrypt(text) {
+  return atob(text);
 }
 
 export const walletService = {
-  // Check if user has a wallet
+
+  /* ======================================================
+     STUDENT / REGULAR USER WALLET (RECEIVING ONLY)
+     ====================================================== */
+
+  // Check if user already has a wallet
   async getUserWallet(userId) {
     try {
       const { data, error } = await supabase
@@ -27,40 +28,40 @@ export const walletService = {
       if (error && error.code !== 'PGRST116') throw error;
       return data;
     } catch (error) {
-      console.error('Error fetching wallet:', error);
+      console.error('Error fetching user wallet:', error);
       return null;
     }
   },
 
-  // Generate new wallet
-  async generateWallet(userId, userEmail) {
+  // Generate wallet for student / regular user
+  async generateWallet(userId, { name, email, department }) {
     try {
-      // Generate new Ethereum wallet
-      const wallet = ethers.Wallet.createRandom();
-      
-      console.log('Generated wallet:', wallet.address);
+      // 🔒 Prevent duplicate wallet creation
+      const existing = await this.getUserWallet(userId);
+      if (existing) {
+        return {
+          success: true,
+          wallet: existing,
+          address: existing.wallet_address
+        };
+      }
 
-      // Encrypt private key
-      const encryptedPrivateKey = encrypt(wallet.privateKey);
+      const wallet = Wallet.createRandom();
 
-      // Store in database
       const { data, error } = await supabase
         .from('user_wallets')
-        .insert([
-          {
-            user_id: userId,
-            wallet_address: wallet.address,
-            wallet_provider: 'generated',
-            private_key_encrypted: encryptedPrivateKey,
-          }
-        ])
+        .insert({
+          user_id: userId,
+          name,
+          email,
+          department,
+          wallet_address: wallet.address,
+          wallet_provider: 'generated'
+        })
         .select()
         .single();
 
       if (error) throw error;
-
-      // Also update instructors table if they're an instructor
-      await this.syncInstructorWallet(userId, wallet.address, encryptedPrivateKey);
 
       return {
         success: true,
@@ -68,7 +69,7 @@ export const walletService = {
         address: wallet.address
       };
     } catch (error) {
-      console.error('Error generating wallet:', error);
+      console.error('Error generating user wallet:', error);
       return {
         success: false,
         error: error.message
@@ -76,44 +77,22 @@ export const walletService = {
     }
   },
 
-  // Sync wallet to instructors table
-  async syncInstructorWallet(userId, walletAddress, encryptedPrivateKey) {
-    try {
-      // Check if user is an instructor
-      const { data: instructor } = await supabase
-        .from('instructors')
-        .select('id')
-        .eq('user_id', userId)
-        .single();
-
-      if (instructor) {
-        // Update instructor wallet
-        await supabase
-          .from('instructors')
-          .update({
-            wallet_address: walletAddress,
-            private_key_encrypted: encryptedPrivateKey
-          })
-          .eq('user_id', userId);
-      }
-    } catch (error) {
-      console.error('Error syncing instructor wallet:', error);
-    }
-  },
-
-  // Connect existing wallet (MetaMask, etc.)
+  // Connect external wallet (MetaMask etc.)
   async connectExternalWallet(userId, walletAddress) {
     try {
+      // 🔒 Preserve identity fields
+      const existing = await this.getUserWallet(userId);
+
       const { data, error } = await supabase
         .from('user_wallets')
-        .upsert([
-          {
-            user_id: userId,
-            wallet_address: walletAddress,
-            wallet_provider: 'external',
-            private_key_encrypted: null // External wallets don't store private keys
-          }
-        ], {
+        .upsert({
+          user_id: userId,
+          wallet_address: walletAddress,
+          wallet_provider: 'external',
+          name: existing?.name,
+          email: existing?.email,
+          department: existing?.department
+        }, {
           onConflict: 'user_id'
         })
         .select()
@@ -126,11 +105,116 @@ export const walletService = {
         wallet: data
       };
     } catch (error) {
-      console.error('Error connecting wallet:', error);
+      console.error('Error connecting external wallet:', error);
       return {
         success: false,
         error: error.message
       };
     }
+  },
+
+  /* ======================================================
+     INSTRUCTOR WALLET (SIGNING ONLY)
+     ====================================================== */
+
+  // Create instructor + signing wallet
+async registerInstructor({ userId }) {
+  try {
+    console.log("▶ registerInstructor START", userId);
+
+    // 1️⃣ Fetch user wallet (identity source)
+    const userWallet = await this.getUserWallet(userId);
+    console.log("▶ userWallet:", userWallet);
+
+    if (!userWallet) {
+      throw new Error("User wallet must exist before becoming instructor");
+    }
+
+    // 2️⃣ Check if instructor already exists
+    const { data: existing, error: fetchErr } = await supabase
+      .from("instructors")
+      .select("id")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    if (existing) {
+      console.log("▶ Instructor already exists");
+      return { success: true };
+    }
+
+    // 3️⃣ Resolve REQUIRED identity fields (cannot be null)
+    const { data: authData } = await supabase.auth.getUser();
+
+    const instructorName =
+      userWallet.name ||
+      authData?.user?.user_metadata?.full_name ||
+      authData?.user?.email?.split("@")[0];
+
+    const instructorEmail =
+      userWallet.email ||
+      authData?.user?.email;
+
+    if (!instructorName || !instructorEmail) {
+      throw new Error("Instructor identity missing (name/email)");
+    }
+
+    // 4️⃣ Generate signing wallet (authority wallet)
+    const wallet = Wallet.createRandom();
+    console.log("▶ Generated signing wallet:", wallet.address);
+
+    // 5️⃣ Insert instructor (MATCHES SCHEMA EXACTLY)
+    const { error: insertErr } = await supabase
+      .from("instructors")
+      .insert({
+        user_id: userId,
+        name: instructorName,                 // ✅ NOT NULL
+        email: instructorEmail,               // ✅ NOT NULL
+        department: userWallet.department,
+        wallet_address: wallet.address,       // ✅ NOT NULL
+        private_key_encrypted: encrypt(wallet.privateKey),
+        status: "active"
+      });
+
+    if (insertErr) throw insertErr;
+
+    console.log("✅ Instructor created successfully");
+
+    return {
+      success: true,
+      signingWallet: wallet.address
+    };
+
+  } catch (error) {
+    console.error("❌ registerInstructor FAILED:", error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
+},
+
+
+
+  // Get instructor signing wallet
+  async getInstructorWallet(userId) {
+    try {
+      const { data, error } = await supabase
+        .from('instructors')
+        .select('private_key_encrypted')
+        .eq('user_id', userId)
+        .single();
+
+      if (error) throw error;
+
+      return {
+        privateKey: decrypt(data.private_key_encrypted)
+      };
+    } catch (error) {
+      console.error('Error fetching instructor wallet:', error);
+      return null;
+    }
+  }
+
 };

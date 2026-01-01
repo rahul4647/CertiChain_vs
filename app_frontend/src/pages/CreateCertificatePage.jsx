@@ -1,3 +1,5 @@
+import { walletService } from "@/services/walletService";
+
 import React, { useState, useRef, useEffect } from "react";
 import {
   ArrowLeft,
@@ -416,28 +418,52 @@ export const CreateCertificatePage = () => {
   const deployGroup = async () => {
     setLoading(true);
     try {
+      // 1️⃣ Get logged-in user
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
       if (!user) throw new Error("Not authenticated");
 
+      // 2️⃣ Ensure instructor exists (creates if missing)
+      const instructorSetup = await walletService.registerInstructor({
+        userId: user.id
+      });
+
+      if (!instructorSetup.success) {
+        throw new Error("Instructor setup failed");
+      }
+
+      // 3️⃣ 🔴 PASTE YOUR BLOCK RIGHT HERE 🔴
+      const { data: instructor, error: instructorError } = await supabase
+        .from("instructors")
+        .select("id")
+        .eq("user_id", user.id)
+        .single();
+
+      if (instructorError || !instructor) {
+        throw new Error("Instructor not registered");
+      }
+
+      // 4️⃣ Continue normally
       const joinCode = generateJoinCode();
 
       const { data: groupData, error: groupError } = await supabase
         .from("groups")
-        .insert([
-          {
-            name: courseTitle,
-            description,
-            created_by: user.id,
-            max_learners: learners,
-            status: "active",
-            join_code: joinCode,
-          },
-        ])
+        .insert({
+          name: courseTitle,
+          description,
+          created_by: user.id,
+          instructor_id: instructor.id, // ✅ uses fetched instructor
+          max_learners: learners,
+          status: "active",
+          join_code: joinCode
+        })
         .select()
         .single();
 
-      if (groupError) throw groupError;
+    if (groupError) throw groupError;
+
+    // ---- rest of your code stays EXACTLY the same ----
+
 
       let templateId = null;
 
@@ -461,7 +487,7 @@ export const CreateCertificatePage = () => {
       if (templateId && fields.length) {
         const payload = fields.map((f) => ({
           template_id: templateId,
-          label: f.type === "text" ? f.label : null,
+          label: f.type === "text" ? f.label : "QR Code", // ✅ NEVER NULL
           type: f.type || "text",
           qr_image: f.type === "qr" ? f.qrImage : null,
           x: Math.round(f.x),
@@ -469,6 +495,7 @@ export const CreateCertificatePage = () => {
           width: Math.round(f.width),
           height: Math.round(f.height),
         }));
+
 
         const { error: fieldsError } = await supabase.from("template_fields").insert(payload);
         if (fieldsError) throw fieldsError;
