@@ -59,7 +59,7 @@ export const CreateCertificatePage = () => {
   // OPEN FULL POPUP PREVIEW
   // ============================
   const openFullPreview = () => {
-    if (!pdfUrl) return alert("Upload a PDF first");
+    if (!pdfUrl) return alert("Upload an image first");
 
     const popup = window.open(
       "",
@@ -94,6 +94,14 @@ export const CreateCertificatePage = () => {
               overflow: hidden;
               box-shadow: 0 0 25px rgba(0,0,0,0.18);
             }
+            .canvas img.bg {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
             .field-box {
               position: absolute;
               background: rgba(219,234,254,0.8);
@@ -117,10 +125,7 @@ export const CreateCertificatePage = () => {
 
         <body>
           <div class="canvas">
-            <iframe 
-              src="${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0"
-              style="position:absolute; inset:0; width:100%; height:100%; border:none; pointer-events:none;"
-            ></iframe>
+            <img class="bg" src="${pdfUrl}" alt="Certificate Template" />
 
             ${fields
               .map(
