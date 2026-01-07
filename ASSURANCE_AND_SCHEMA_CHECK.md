@@ -39,7 +39,7 @@
 - ✅ Fixed supervisor config path (`/app/app_frontend`)
 - ✅ Installed all dependencies (`yarn install`)
 - ✅ Updated backend URL to `http://localhost:8001`
-- ✅ Updated APP_URL to `https://certimint.preview.emergentagent.com`
+- ✅ Updated APP_URL to `https://cert-image-uploader.preview.emergentagent.com`
 - ✅ Frontend running on port 3000 ✅
 
 ---

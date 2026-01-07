@@ -1,6 +1,6 @@
 # Google Cloud Console - URL Not Working? Solutions
 
-## Issue: `https://certimint.preview.emergentagent.com` not accepting in Google Cloud
+## Issue: `https://cert-image-uploader.preview.emergentagent.com` not accepting in Google Cloud
 
 The URL is valid and accessible (confirmed), but Google Cloud Console might be rejecting it for these reasons:
 
@@ -11,16 +11,16 @@ The URL is valid and accessible (confirmed), but Google Cloud Console might be r
 ### ❌ Common Mistakes:
 
 **DO NOT add:**
-- Trailing slash: `https://certimint.preview.emergentagent.com/` ❌
-- Trailing dots: `https://certimint.preview.emergentagent.com..` ❌
-- Any path: `https://certimint.preview.emergentagent.com/login` ❌
-- Query params: `https://certimint.preview.emergentagent.com?test=1` ❌
+- Trailing slash: `https://cert-image-uploader.preview.emergentagent.com/` ❌
+- Trailing dots: `https://cert-image-uploader.preview.emergentagent.com..` ❌
+- Any path: `https://cert-image-uploader.preview.emergentagent.com/login` ❌
+- Query params: `https://cert-image-uploader.preview.emergentagent.com?test=1` ❌
 
 ### ✅ Correct Format:
 
 Copy this EXACT URL (no extra characters):
 ```
-https://certimint.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 ---
@@ -106,10 +106,10 @@ Sometimes Google Cloud Console has caching issues:
 
 **Solution:**
 ```
-✅ Correct: https://certimint.preview.emergentagent.com
-❌ Wrong: https://certimint.preview.emergentagent.com/
+✅ Correct: https://cert-image-uploader.preview.emergentagent.com
+❌ Wrong: https://cert-image-uploader.preview.emergentagent.com/
 ❌ Wrong: certimint.preview.emergentagent.com
-❌ Wrong: https://certimint.preview.emergentagent.com..
+❌ Wrong: https://cert-image-uploader.preview.emergentagent.com..
 ```
 
 ### Error: "Origin must use HTTPS"
@@ -117,7 +117,7 @@ Sometimes Google Cloud Console has caching issues:
 
 **Solution:**
 ```
-✅ https://certimint.preview.emergentagent.com
+✅ https://cert-image-uploader.preview.emergentagent.com
 ❌ http://certimint.preview.emergentagent.com
 ```
 
@@ -248,7 +248,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 ### Step 3: Test in Your App
 
-1. Open: https://certimint.preview.emergentagent.com
+1. Open: https://cert-image-uploader.preview.emergentagent.com
 2. Click "Sign in with Google"
 3. **It should work!** (Because Supabase URL is added)
 
@@ -274,7 +274,7 @@ http://localhost:3000
 
 **Test 3: Preview (Trying to add)**
 ```
-https://certimint.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 Try adding Test 1, then Test 2, then Test 3. Tell me which one fails.
@@ -303,7 +303,7 @@ The OAuth flow goes through Supabase, not your preview URL. As long as you have:
 - ✅ Supabase callback in Redirect URIs
 
 Your Google Sign-In will work on **any domain**, including:
-- https://certimint.preview.emergentagent.com
+- https://cert-image-uploader.preview.emergentagent.com
 - http://localhost:3000
 - Any other domain
 

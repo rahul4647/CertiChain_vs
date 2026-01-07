@@ -4,7 +4,7 @@
 
 You tried to add:
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com..
+https://cert-image-uploader.preview.emergentagent.com..
                                                                       ^^
                                                                    ERROR!
 ```
@@ -18,7 +18,7 @@ https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com..
 ### Correct URL to Add (Remove the dots):
 
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 **Copy the exact URL above** (no trailing dots, no trailing slash)
@@ -44,7 +44,7 @@ Scroll down to **"Authorized JavaScript origins"** section
 
 #### 1. Your Preview URL:
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 **Important:**
 - ✅ NO trailing slash
@@ -105,7 +105,7 @@ After typing each URL:
 
 ```
 ✅ http://localhost:3000
-✅ https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+✅ https://cert-image-uploader.preview.emergentagent.com
 ❌ http://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
 ```
 
@@ -158,7 +158,7 @@ protocol://hostname:port
 
 ### 1. Copy this URL (without dots):
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 ### 2. In Google Cloud Console:
@@ -177,7 +177,7 @@ https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
 ### 3. Verify It's Added:
 - You should see three origins listed:
   ```
-  ✅ https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+  ✅ https://cert-image-uploader.preview.emergentagent.com
   ✅ https://ewtwjfwobqkivrpicvvl.supabase.co
   ✅ http://localhost:3000
   ```
@@ -214,7 +214,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 ### Authorized JavaScript origins (3 entries):
 ```
-1. https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+1. https://cert-image-uploader.preview.emergentagent.com
 2. https://ewtwjfwobqkivrpicvvl.supabase.co
 3. http://localhost:3000
 ```
@@ -253,7 +253,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 Open this in your browser:
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 If it loads your app, the URL is correct!
@@ -264,7 +264,7 @@ If it loads your app, the URL is correct!
 
 **For JavaScript Origins:**
 ```
-https://19b1b7d9-8e8b-47f8-8448-e334fcded889.preview.emergentagent.com
+https://cert-image-uploader.preview.emergentagent.com
 ```
 
 ```
