@@ -615,9 +615,9 @@ export const CreateCertificatePage = () => {
                   <p className="text-lg text-slate-700 font-medium mb-2">
                     {loading ? "Uploading..." : "Click to upload or drag and drop"}
                   </p>
-                  <p className="text-sm text-slate-500">PDF files only (Max 5MB)</p>
+                  <p className="text-sm text-slate-500">JPG/JPEG images only (Max 5MB)</p>
                   {pdfFile && <p className="text-sm text-green-600 mt-2">✓ {pdfFile.name} selected</p>}
-                  <input ref={fileInputRef} type="file" accept="application/pdf" className="hidden" onChange={onSelectFile} />
+                  <input ref={fileInputRef} type="file" accept="image/jpeg,image/jpg,.jpg,.jpeg" className="hidden" onChange={onSelectFile} />
                 </div>
               </CardContent>
             </Card>
