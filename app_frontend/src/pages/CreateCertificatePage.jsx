@@ -795,12 +795,18 @@ export const CreateCertificatePage = () => {
                       >
                     {pdfUrl ? (
                       <>
-                        <iframe 
-                          src={`${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`} 
-                          width="100%" 
-                          height="100%"
-                          style={{ border: 'none', pointerEvents: 'none', position: 'absolute', top: 0, left: 0 }}
-                          title="Certificate Preview"
+                        <img 
+                          src={pdfUrl}
+                          alt="Certificate Preview"
+                          style={{ 
+                            position: 'absolute', 
+                            top: 0, 
+                            left: 0,
+                            width: '100%', 
+                            height: '100%',
+                            objectFit: 'contain',
+                            pointerEvents: 'none'
+                          }}
                         />
                         {fields.map((f) => {
                         const leftPct = (f.x / pdfDimensions.width) * 100;
