@@ -744,7 +744,7 @@ export const CreateCertificatePage = () => {
                       <div className="h-full flex items-center justify-center text-slate-400">
                         <div className="text-center">
                           <Upload className="mx-auto mb-2 w-12 h-12" />
-                          <div className="text-sm">Upload a PDF to preview the template</div>
+                          <div className="text-sm">Upload a JPG image to preview the template</div>
                         </div>
                       </div>
                     )}
