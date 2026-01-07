@@ -159,9 +159,9 @@ export const CreateCertificatePage = () => {
   };
 
   // ============================
-  // PDF UPLOAD
+  // IMAGE UPLOAD (JPG only)
   // ============================
-  const uploadPdfToStorage = async (file) => {
+  const uploadImageToStorage = async (file) => {
     if (!file) return null;
     const fileExt = file.name.split(".").pop();
     const fileName = `template-${Date.now()}.${fileExt}`;
@@ -180,7 +180,7 @@ export const CreateCertificatePage = () => {
 
       return urlData.publicUrl;
     } catch (err) {
-      alert("PDF upload failed: " + err.message);
+      alert("Image upload failed: " + err.message);
       return null;
     }
   };
@@ -189,6 +189,13 @@ export const CreateCertificatePage = () => {
       const file = e.target.files?.[0];
       if (!file) return;
 
+      // Validate JPG/JPEG only
+      const validTypes = ['image/jpeg', 'image/jpg'];
+      if (!validTypes.includes(file.type)) {
+        alert("Please upload a JPG/JPEG image only");
+        return;
+      }
+
       if (file.size > 5 * 1024 * 1024) {
         alert("Max file size 5MB");
         return;
@@ -196,23 +203,22 @@ export const CreateCertificatePage = () => {
 
       setPdfFile(file);
       setLoading(true);
-      const url = await uploadPdfToStorage(file);
+      const url = await uploadImageToStorage(file);
       setLoading(false);
 
       if (url) {
         setPdfUrl(url);
-        // Load PDF to get actual dimensions
-        const loadingTask = window.pdfjsLib.getDocument(url);
-        loadingTask.promise.then((pdf) => {
-          pdf.getPage(1).then((page) => {
-            const viewport = page.getViewport({ scale: 1 });
-            setPdfDimensions({ width: viewport.width, height: viewport.height });
-          });
-        }).catch((err) => {
-          console.error("Failed to load PDF dimensions:", err);
+        // Load image to get actual dimensions
+        const img = new Image();
+        img.onload = () => {
+          setPdfDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+        };
+        img.onerror = () => {
+          console.error("Failed to load image dimensions");
           // Fallback to default landscape
           setPdfDimensions({ width: 800, height: 560 });
-        });
+        };
+        img.src = url;
       }
     };
 
