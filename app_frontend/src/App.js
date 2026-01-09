@@ -16,6 +16,7 @@ import { GroupDetailsPage } from './pages/GroupDetailsPage';
 import { ClaimPage } from './pages/ClaimPage';
 import {JoinGroupPage} from './pages/JoinGroupPage';
 import {StudentGroupView} from './pages/StudentGroupView';
+import {VerifyPage} from './pages/VerifyPage';
 
 function App() {
   useEffect(() => {
