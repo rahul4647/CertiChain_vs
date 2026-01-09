@@ -43,6 +43,7 @@ function App() {
           <Route path="/join" element={<JoinGroupPage />} />
           <Route path="/join/:joinCode" element={<JoinGroupPage />} />
           <Route path="/student/group/:groupId" element={<StudentGroupView />} />
+          <Route path="/verify/:certificateId" element={<VerifyPage />} />
         </Routes>
       </BrowserRouter>
     </div>
