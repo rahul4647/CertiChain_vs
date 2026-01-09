@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Award, Calendar, Users, CheckCircle2, Download, Share2, ExternalLink, FileText, ArrowLeft } from 'lucide-react';
+import { Award, Calendar, Users, CheckCircle2, Download, Share2, ExternalLink, FileText, ArrowLeft, Loader2, Mail, QrCode } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/supabaseClient';
 import { toast } from 'sonner';
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
 
 export const StudentGroupView = () => {
   // Get groupId from URL path
@@ -17,12 +19,17 @@ export const StudentGroupView = () => {
   const [formData, setFormData] = useState({});
   const [totalParticipants, setTotalParticipants] = useState(0);
   const [pdfDimensions, setPdfDimensions] = useState({ width: 800, height: 560 });
-  const [pdfPage, setPdfPage] = useState(null);
   const canvasRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
+  const [minting, setMinting] = useState(false);
   const [claimed, setClaimed] = useState(false);
   const [certificateId, setCertificateId] = useState(null);
+  const [mintingResult, setMintingResult] = useState(null);
+  
+  // Additional form fields for minting
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [studentId, setStudentId] = useState('');
 
   useEffect(() => {
     loadGroupDetails();
@@ -51,21 +58,19 @@ export const StudentGroupView = () => {
           .single();
         setTemplate(tmpl);
 
-        // Load PDF dimensions
-        // Replace the existing PDF dimensions loading code with:
+        // Load image dimensions for JPG template
         if (tmpl?.pdf_url) {
-          try {
-            const loadingTask = window.pdfjsLib.getDocument(tmpl.pdf_url);
-            const pdf = await loadingTask.promise;
-            const page = await pdf.getPage(1);
-            setPdfPage(page);
-            const viewport = page.getViewport({ scale: 1 });
-            setPdfDimensions({ width: viewport.width, height: viewport.height });
-          } catch (err) {
-            console.error("Failed to load PDF:", err);
+          const img = new Image();
+          img.onload = () => {
+            setPdfDimensions({ width: img.naturalWidth, height: img.naturalHeight });
+          };
+          img.onerror = () => {
+            console.error("Failed to load template image");
             setPdfDimensions({ width: 800, height: 560 });
-          }
+          };
+          img.src = tmpl.pdf_url;
         }
+
         const { data: flds } = await supabase
           .from('template_fields')
           .select('*')
@@ -88,29 +93,6 @@ export const StudentGroupView = () => {
       setLoading(false);
     }
   };
-  // Add this new useEffect after the loadDetails useEffect
-useEffect(() => {
-  if (!pdfPage || !canvasRef.current) return;
-
-  const canvas = canvasRef.current;
-  const container = canvas.parentElement;
-  const containerWidth = container.offsetWidth;
-  const scale = containerWidth / pdfDimensions.width;
-  
-  const viewport = pdfPage.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-
-  const context = canvas.getContext('2d');
-  const renderContext = {
-    canvasContext: context,
-    viewport: viewport
-  };
-  
-  pdfPage.render(renderContext);
-}, [pdfPage, pdfDimensions]);
 
   const handleInputChange = (fieldId, value) => {
     setFormData(prev => ({ ...prev, [fieldId]: value }));
@@ -126,13 +108,18 @@ useEffect(() => {
       return;
     }
 
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
     setClaiming(true);
 
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const user = sessionData?.session?.user;
 
-      // Build field_data object
+      // Build field_data object with labels as keys
       const fieldDataObj = {};
       fields.forEach(field => {
         if (field.type === 'text') {
@@ -140,7 +127,11 @@ useEffect(() => {
         }
       });
 
-      // Insert certificate
+      // Get recipient name from fields (usually the first text field)
+      const recipientNameField = fields.find(f => f.label?.toLowerCase().includes('name') || f.label?.toLowerCase().includes('recipient'));
+      const recipientName = recipientNameField ? (formData[recipientNameField.id] || '') : (fieldDataObj['Recipient Name'] || 'Student');
+
+      // Insert certificate record
       const { data: cert, error: certError } = await supabase
         .from('certificates')
         .insert([
@@ -150,6 +141,7 @@ useEffect(() => {
             claimed_by: user?.id || null,
             field_data: fieldDataObj,
             claimed_at: new Date().toISOString(),
+            status: 'pending'
           },
         ])
         .select()
@@ -158,153 +150,172 @@ useEffect(() => {
       if (certError) throw certError;
 
       setCertificateId(cert.id);
+      toast.success('Certificate record created! Starting minting process...');
+      
+      // Now trigger minting
+      setMinting(true);
+      setClaiming(false);
+
+      const mintResponse = await fetch(`${BACKEND_URL}/api/certificates/mint`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          certificate_db_id: cert.id,
+          group_id: groupId,
+          template_id: template.id,
+          field_data: fieldDataObj,
+          recipient_email: recipientEmail,
+          recipient_name: recipientName,
+          student_id: studentId || null
+        })
+      });
+
+      if (!mintResponse.ok) {
+        const errorData = await mintResponse.json();
+        throw new Error(errorData.detail || 'Minting failed');
+      }
+
+      const mintData = await mintResponse.json();
+      setMintingResult(mintData);
       setClaimed(true);
-      toast.success('Certificate claimed successfully! 🎉');
+      toast.success('Certificate minted successfully! 🎉');
 
     } catch (err) {
-      console.error('Claim error:', err);
-      toast.error('Failed to claim certificate');
+      console.error('Claim/Mint error:', err);
+      toast.error(err.message || 'Failed to claim certificate');
+      setMinting(false);
     } finally {
       setClaiming(false);
+      setMinting(false);
     }
   };
- const openCertificatePreview = async () => {
-  if (!template || !pdfPage) return;
-  
-  const popup = window.open(
-    "",
-    "certificatePreview",
-    "width=1400,height=900,resizable=yes,scrollbars=yes"
-  );
-  
-  if (!popup) {
-    toast.error("Please allow popups to view full preview");
-    return;
-  }
 
-  const displayWidth = 1200;
-  const scale = displayWidth / pdfDimensions.width;
-  const displayHeight = pdfDimensions.height * scale;
+  const openCertificatePreview = () => {
+    if (!template) return;
+    
+    const popup = window.open(
+      "",
+      "certificatePreview",
+      "width=1400,height=900,resizable=yes,scrollbars=yes"
+    );
+    
+    if (!popup) {
+      toast.error("Please allow popups to view full preview");
+      return;
+    }
 
-  // Render PDF to canvas
-  const tempCanvas = document.createElement('canvas');
-  const viewport = pdfPage.getViewport({ scale });
-  tempCanvas.width = viewport.width;
-  tempCanvas.height = viewport.height;
-  const context = tempCanvas.getContext('2d');
-  
-  await pdfPage.render({
-    canvasContext: context,
-    viewport: viewport
-  }).promise;
-
-  const pdfDataUrl = tempCanvas.toDataURL('image/png');
-  
-  popup.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Certificate Preview - ${group.name}</title>
-        <meta charset="UTF-8">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          body {
-            margin: 0;
-            padding: 40px;
-            background: #f1f5f9;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            min-height: 100vh;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-          }
-          .canvas {
-            position: relative;
-            width: ${displayWidth}px;
-            height: ${displayHeight}px;
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 25px 60px rgba(0,0,0,0.25);
-          }
-          .pdf-image {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-          }
-          .field {
-            position: absolute;
-            background: rgba(219,234,254,0.85);
-            border: 2px solid #3b82f6;
-            border-radius: 6px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: inherit;
-            color: #1e3a8a;
-            font-weight: 600;
-            padding: 8px 12px;
-            box-sizing: border-box;
-          }
-          .qr-container {
-            position: absolute;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          .qr-img {
-            max-width: 100%;
-            max-height: 100%;
-            object-fit: contain;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="canvas">
-          <img src="${pdfDataUrl}" class="pdf-image" alt="Certificate" />
-          ${fields.map(f => {
-            const leftPx = f.x * scale;
-            const topPx = f.y * scale;
-            const widthPx = f.width * scale;
-            const heightPx = f.height * scale;
-            
-            if (f.type === "qr") {
-              return `
-                <div class="qr-container" style="
-                  left: ${leftPx}px;
-                  top: ${topPx}px;
-                  width: ${widthPx}px;
-                  height: ${heightPx}px;
-                ">
-                  <img src="${f.qr_image}" class="qr-img" alt="QR Code" />
-                </div>
-              `;
-            } else {
-              const fontSize = Math.max(12, heightPx * 0.4);
-              return `
-                <div class="field" style="
-                  left: ${leftPx}px;
-                  top: ${topPx}px;
-                  width: ${widthPx}px;
-                  height: ${heightPx}px;
-                  font-size: ${fontSize}px;
-                ">
-                  ${f.label || ""}
-                </div>
-              `;
+    const displayWidth = 1200;
+    const scale = displayWidth / pdfDimensions.width;
+    const displayHeight = pdfDimensions.height * scale;
+    
+    popup.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Certificate Preview - ${group.name}</title>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              margin: 0;
+              padding: 40px;
+              background: #f1f5f9;
+              display: flex;
+              justify-content: center;
+              align-items: flex-start;
+              min-height: 100vh;
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             }
-          }).join("")}
-        </div>
-      </body>
-    </html>
-  `);
-  
-  popup.document.close();
-  popup.focus();
-};
+            .canvas {
+              position: relative;
+              width: ${displayWidth}px;
+              height: ${displayHeight}px;
+              background: white;
+              border-radius: 12px;
+              overflow: hidden;
+              box-shadow: 0 25px 60px rgba(0,0,0,0.25);
+            }
+            .template-image {
+              position: absolute;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              object-fit: contain;
+            }
+            .field {
+              position: absolute;
+              background: rgba(219,234,254,0.85);
+              border: 2px solid #3b82f6;
+              border-radius: 6px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-family: inherit;
+              color: #1e3a8a;
+              font-weight: 600;
+              padding: 8px 12px;
+              box-sizing: border-box;
+            }
+            .qr-container {
+              position: absolute;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .qr-img {
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="canvas">
+            <img src="${template.pdf_url}" class="template-image" alt="Certificate Template" />
+            ${fields.map(f => {
+              const leftPx = f.x * scale;
+              const topPx = f.y * scale;
+              const widthPx = f.width * scale;
+              const heightPx = f.height * scale;
+              
+              if (f.type === "qr") {
+                return `
+                  <div class="qr-container" style="
+                    left: ${leftPx}px;
+                    top: ${topPx}px;
+                    width: ${widthPx}px;
+                    height: ${heightPx}px;
+                  ">
+                    <img src="${f.qr_image}" class="qr-img" alt="QR Code" />
+                  </div>
+                `;
+              } else {
+                const fontSize = Math.max(12, heightPx * 0.4);
+                const displayValue = formData[f.id] || f.label;
+                return `
+                  <div class="field" style="
+                    left: ${leftPx}px;
+                    top: ${topPx}px;
+                    width: ${widthPx}px;
+                    height: ${heightPx}px;
+                    font-size: ${fontSize}px;
+                  ">
+                    ${displayValue}
+                  </div>
+                `;
+              }
+            }).join("")}
+          </div>
+        </body>
+      </html>
+    `);
+    
+    popup.document.close();
+    popup.focus();
+  };
 
   if (loading) {
     return (
@@ -327,7 +338,8 @@ useEffect(() => {
     );
   }
 
-  if (claimed) {
+  // SUCCESS STATE - Certificate Minted
+  if (claimed && mintingResult) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50">
         <header className="bg-white border-b border-slate-200 shadow-sm">
@@ -341,40 +353,120 @@ useEffect(() => {
           </div>
         </header>
 
-        <div className="max-w-4xl mx-auto px-6 py-20">
+        <div className="max-w-4xl mx-auto px-6 py-12">
           <Card className="bg-gradient-to-br from-green-50 to-white border-2 border-green-200 shadow-xl">
             <CardContent className="p-12 text-center">
               <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <CheckCircle2 className="w-14 h-14 text-green-600" />
               </div>
               <h2 className="text-4xl font-bold text-slate-900 mb-4">
-                Certificate Claimed Successfully! 🎉
+                Certificate Minted Successfully! 🎉
               </h2>
               <p className="text-lg text-slate-600 mb-8">
-                Your certificate has been generated and is ready to download
+                Your certificate has been generated with a unique QR code and minted on the blockchain.
               </p>
 
+              {/* Certificate Preview */}
+              {mintingResult.certificate_image_url && (
+                <div className="bg-slate-100 rounded-xl p-4 mb-8">
+                  <img 
+                    src={mintingResult.certificate_image_url} 
+                    alt="Your Certificate" 
+                    className="w-full max-w-2xl mx-auto rounded-lg shadow-lg"
+                  />
+                </div>
+              )}
+
+              {/* QR Code */}
+              {mintingResult.qr_code && (
+                <div className="mb-8">
+                  <p className="text-sm text-slate-600 mb-2">Scan to verify:</p>
+                  <img 
+                    src={`data:image/png;base64,${mintingResult.qr_code}`} 
+                    alt="Verification QR Code" 
+                    className="w-32 h-32 mx-auto rounded-lg shadow-md"
+                  />
+                </div>
+              )}
+
+              {/* Details */}
+              <div className="bg-white rounded-xl p-6 border border-slate-200 mb-8 text-left max-w-md mx-auto">
+                <h3 className="font-semibold text-slate-900 mb-4">Certificate Details</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Certificate ID:</span>
+                    <code className="bg-slate-100 px-2 py-0.5 rounded text-xs">{mintingResult.certificate_id}</code>
+                  </div>
+                  {mintingResult.nft_id && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">NFT ID:</span>
+                      <code className="bg-slate-100 px-2 py-0.5 rounded text-xs">{mintingResult.nft_id}</code>
+                    </div>
+                  )}
+                  {mintingResult.token_id && mintingResult.token_id !== 'pending' && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Token ID:</span>
+                      <span>{mintingResult.token_id}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl text-lg shadow-lg">
-                  <Download className="w-5 h-5 mr-2" />
-                  Download Certificate
-                </Button>
-                <Button variant="outline" className="px-8 py-6 rounded-xl text-lg border-2">
-                  <Share2 className="w-5 h-5 mr-2" />
-                  Share on LinkedIn
-                </Button>
+                {mintingResult.certificate_image_url && (
+                  <a href={mintingResult.certificate_image_url} target="_blank" rel="noopener noreferrer">
+                    <Button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-6 rounded-xl text-lg shadow-lg w-full sm:w-auto">
+                      <Download className="w-5 h-5 mr-2" />
+                      Download Certificate
+                    </Button>
+                  </a>
+                )}
+                <a 
+                  href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(mintingResult.verification_url)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="outline" className="px-8 py-6 rounded-xl text-lg border-2 w-full sm:w-auto">
+                    <Share2 className="w-5 h-5 mr-2" />
+                    Share on LinkedIn
+                  </Button>
+                </a>
               </div>
 
               <div className="mt-8 pt-8 border-t border-slate-200">
-                <p className="text-sm text-slate-600 mb-4">Certificate ID: #{certificateId}</p>
-                <Button variant="ghost" className="text-blue-600 hover:text-blue-700">
-                  <ExternalLink className="w-4 h-4 mr-2" />
-                  View Verification Page
-                </Button>
+                <a href={mintingResult.verification_url} target="_blank" rel="noopener noreferrer">
+                  <Button variant="ghost" className="text-blue-600 hover:text-blue-700">
+                    <ExternalLink className="w-4 h-4 mr-2" />
+                    View Verification Page
+                  </Button>
+                </a>
               </div>
             </CardContent>
           </Card>
         </div>
+      </div>
+    );
+  }
+
+  // MINTING STATE
+  if (minting) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center">
+        <Card className="max-w-md w-full shadow-xl">
+          <CardContent className="p-12 text-center">
+            <Loader2 className="w-16 h-16 text-blue-600 animate-spin mx-auto mb-6" />
+            <h2 className="text-2xl font-bold text-slate-900 mb-4">Minting Your Certificate</h2>
+            <p className="text-slate-600 mb-4">
+              Please wait while we generate your certificate image, create the QR code, and mint it on the blockchain...
+            </p>
+            <div className="space-y-2 text-sm text-slate-500">
+              <p>✓ Creating certificate record</p>
+              <p>✓ Generating certificate image</p>
+              <p className="text-blue-600 font-medium">⏳ Minting NFT on Polygon...</p>
+              <p className="opacity-50">Updating database</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -425,7 +517,7 @@ useEffect(() => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-slate-600 mb-1">Organization</p>
-                  <p className="text-xl font-bold text-slate-900">Tech Academy</p>
+                  <p className="text-xl font-bold text-slate-900">CertiChain</p>
                 </div>
                 <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
                   <FileText className="w-6 h-6 text-blue-600" />
@@ -490,86 +582,83 @@ useEffect(() => {
               ) : (
                 <div className="space-y-4">
                   {/* Inline preview thumbnail */}
+                  <div 
+                    className="bg-slate-100 rounded-xl p-4 border-2 border-slate-300"
+                    style={{
+                      aspectRatio: `${pdfDimensions.width} / ${pdfDimensions.height}`
+                    }}
+                  >
                     <div 
-                      className="bg-slate-100 rounded-xl p-4 border-2 border-slate-300"
+                      className="relative mx-auto bg-white shadow-md rounded-md overflow-hidden"
                       style={{
-                        aspectRatio: `${pdfDimensions.width} / ${pdfDimensions.height}`
+                        width: '100%',
+                        height: '100%'
                       }}
                     >
-                      <div 
-                        className="relative mx-auto bg-white shadow-md rounded-md overflow-hidden"
+                      {/* Template Image */}
+                      <img 
+                        src={template.pdf_url}
+                        alt="Certificate Template"
                         style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
                           width: '100%',
-                          height: '100%'
+                          height: '100%',
+                          objectFit: 'contain'
                         }}
-                      >
-                        <canvas 
-                          ref={canvasRef}
-                          style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'contain'
-                          }}
-                        />
-                        {fields.map((f) => {
-                          const leftPct = (f.x / pdfDimensions.width) * 100;
-                          const topPct = (f.y / pdfDimensions.height) * 100;
-                          const widthPct = (f.width / pdfDimensions.width) * 100;
-                          const heightPct = (f.height / pdfDimensions.height) * 100;
+                      />
+                      {/* Field overlays */}
+                      {fields.map((f) => {
+                        const leftPct = (f.x / pdfDimensions.width) * 100;
+                        const topPct = (f.y / pdfDimensions.height) * 100;
+                        const widthPct = (f.width / pdfDimensions.width) * 100;
+                        const heightPct = (f.height / pdfDimensions.height) * 100;
 
-                          return (
-                            <div 
-                              key={f.id}
-                              style={{
-                                position: "absolute",
-                                left: `${leftPct}%`,
-                                top: `${topPct}%`,
-                                width: `${widthPct}%`,
-                                height: `${heightPct}%`,
-                                background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
-                                border: "2px solid #3b82f6",
-                                borderRadius: 4,
-                                boxSizing: "border-box",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                zIndex: 10,
-                              }}
-                            >
-                              {f.type === "text" ? (
-                                <span 
-                                  style={{ 
-                                    padding: "2px 6px",
-                                    fontSize: "10px",
-                                    fontWeight: 600,
-                                    color: "#1e3a8a",
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    maxWidth: '100%'
-                                  }}
-                                >
-                                  {f.label}
-                                </span>
-                              ) : (
-                                <img 
-                                  src={f.qr_image} 
-                                  alt="qr" 
-                                  style={{ 
-                                    width: '90%', 
-                                    height: '90%', 
-                                    objectFit: 'contain' 
-                                  }} 
-                                />
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                        return (
+                          <div 
+                            key={f.id}
+                            style={{
+                              position: "absolute",
+                              left: `${leftPct}%`,
+                              top: `${topPct}%`,
+                              width: `${widthPct}%`,
+                              height: `${heightPct}%`,
+                              background: f.type === "qr" ? "transparent" : "rgba(219, 234, 254, 0.7)",
+                              border: "2px solid #3b82f6",
+                              borderRadius: 4,
+                              boxSizing: "border-box",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              zIndex: 10,
+                            }}
+                          >
+                            {f.type === "text" ? (
+                              <span 
+                                style={{ 
+                                  padding: "2px 6px",
+                                  fontSize: "10px",
+                                  fontWeight: 600,
+                                  color: "#1e3a8a",
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  maxWidth: '100%'
+                                }}
+                              >
+                                {formData[f.id] || f.label}
+                              </span>
+                            ) : (
+                              <div className="flex items-center justify-center w-full h-full">
+                                <QrCode className="w-1/2 h-1/2 text-slate-400" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
+                  </div>
                   
                   <Button
                     onClick={openCertificatePreview}
@@ -585,7 +674,7 @@ useEffect(() => {
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-4">
                 <p className="text-sm text-blue-800">
                   <CheckCircle2 className="w-4 h-4 inline mr-2" />
-                  Your certificate will be generated with your information after claiming
+                  Your certificate will be generated with your information and a unique QR code after claiming
                 </p>
               </div>
             </CardContent>
@@ -600,6 +689,7 @@ useEffect(() => {
             </CardHeader>
             <CardContent className="p-6">
               <div className="space-y-4 mb-6">
+                {/* Dynamic template fields */}
                 {fields.filter(f => f.type === 'text').map((field) => (
                   <div key={field.id}>
                     <label className="text-sm font-semibold text-slate-700 mb-2 block">
@@ -615,22 +705,58 @@ useEffect(() => {
                     />
                   </div>
                 ))}
+
+                {/* Email field for NFT delivery */}
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                    <Mail className="w-4 h-4 inline mr-1" />
+                    Email Address
+                    <span className="text-red-500 ml-1">*</span>
+                  </label>
+                  <Input
+                    type="email"
+                    placeholder="your@email.com"
+                    value={recipientEmail}
+                    onChange={(e) => setRecipientEmail(e.target.value)}
+                    className="rounded-xl py-6 text-lg"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">NFT certificate will be delivered to this email</p>
+                </div>
+
+                {/* Optional Student ID */}
+                <div>
+                  <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                    Student ID (Optional)
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="Enter student ID if applicable"
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    className="rounded-xl py-6 text-lg"
+                  />
+                </div>
               </div>
 
               <Button
                 onClick={handleClaimCertificate}
-                disabled={claiming}
+                disabled={claiming || minting}
                 className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white py-7 rounded-xl text-lg font-semibold shadow-lg disabled:opacity-50"
               >
                 {claiming ? (
                   <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                    Processing...
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Creating Certificate...
+                  </>
+                ) : minting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Minting NFT...
                   </>
                 ) : (
                   <>
                     <Award className="w-5 h-5 mr-2" />
-                    Claim Certificate
+                    Claim & Mint Certificate
                   </>
                 )}
               </Button>
@@ -640,7 +766,7 @@ useEffect(() => {
                   <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
                   <div>
                     <p className="font-medium text-slate-900 mb-1">Blockchain Verified</p>
-                    <p>Your certificate will be securely stored and can be verified anytime.</p>
+                    <p>Your certificate will be minted as an NFT on Polygon and can be verified anytime via QR code.</p>
                   </div>
                 </div>
               </div>
