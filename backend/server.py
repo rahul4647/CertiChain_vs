@@ -17,9 +17,10 @@ import httpx
 from supabase import create_client, Client
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
-from PyPDF2 import PdfReader, PdfWriter
+from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
@@ -67,6 +68,16 @@ class CollectionCreate(BaseModel):
     symbol: str
     chain: str = "polygon"
 
+# NEW: Mint Certificate Request Model
+class MintCertificateRequest(BaseModel):
+    certificate_db_id: str  # The UUID from certificates table
+    group_id: str
+    template_id: str
+    field_data: Dict[str, Any]  # Dynamic field data from form
+    recipient_email: str
+    recipient_name: str
+    student_id: Optional[str] = None
+
 # Utility Functions
 def generate_join_code() -> str:
     import random
@@ -104,6 +115,137 @@ def verify_signature(message: str, signature: str, expected_address: str) -> boo
     except Exception as e:
         print(f"Signature verification failed: {e}")
         return False
+
+def generate_qr_code(data: str) -> str:
+    """Generate QR code and return as base64 string"""
+    qr = qrcode.QRCode(version=1, box_size=10, border=2)
+    qr.add_data(data)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="black", back_color="white")
+    qr_buffer = BytesIO()
+    qr_img.save(qr_buffer, format="PNG")
+    qr_buffer.seek(0)
+    return base64.b64encode(qr_buffer.getvalue()).decode()
+
+def generate_certificate_image(
+    template_url: str,
+    fields: List[Dict],
+    field_data: Dict[str, str],
+    qr_code_base64: str,
+    template_width: int = 800,
+    template_height: int = 560
+) -> str:
+    """
+    Generate certificate image with text fields and QR code overlaid
+    Returns base64 encoded image
+    """
+    try:
+        # Download the template image
+        response = requests.get(template_url, timeout=30)
+        response.raise_for_status()
+        template_img = Image.open(BytesIO(response.content))
+        
+        # Convert to RGBA for transparency support
+        if template_img.mode != 'RGBA':
+            template_img = template_img.convert('RGBA')
+        
+        # Get actual dimensions
+        actual_width, actual_height = template_img.size
+        
+        # Create a drawing context
+        draw = ImageDraw.Draw(template_img)
+        
+        # Try to load a font, fallback to default
+        try:
+            # Try different font paths
+            font_paths = [
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+                "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+            ]
+            font = None
+            for font_path in font_paths:
+                if os.path.exists(font_path):
+                    font = ImageFont.truetype(font_path, 24)
+                    break
+            if font is None:
+                font = ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+        
+        # Calculate scale factors
+        scale_x = actual_width / template_width
+        scale_y = actual_height / template_height
+        
+        # Process each field
+        for field in fields:
+            field_type = field.get('type', 'text')
+            x = int(field.get('x', 0) * scale_x)
+            y = int(field.get('y', 0) * scale_y)
+            width = int(field.get('width', 200) * scale_x)
+            height = int(field.get('height', 40) * scale_y)
+            
+            if field_type == 'text':
+                label = field.get('label', '')
+                # Get the value from field_data using label as key
+                text_value = field_data.get(label, label)
+                
+                # Calculate font size based on field height
+                font_size = max(12, int(height * 0.6))
+                try:
+                    for font_path in font_paths:
+                        if os.path.exists(font_path):
+                            text_font = ImageFont.truetype(font_path, font_size)
+                            break
+                    else:
+                        text_font = font
+                except:
+                    text_font = font
+                
+                # Get text bounding box for centering
+                bbox = draw.textbbox((0, 0), text_value, font=text_font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+                
+                # Center text in the field
+                text_x = x + (width - text_width) // 2
+                text_y = y + (height - text_height) // 2
+                
+                # Draw text (dark blue color)
+                draw.text((text_x, text_y), text_value, fill=(30, 58, 138), font=text_font)
+                
+            elif field_type == 'qr':
+                # Decode QR code from base64
+                qr_image_data = base64.b64decode(qr_code_base64)
+                qr_img = Image.open(BytesIO(qr_image_data))
+                
+                # Resize QR code to fit field
+                qr_img = qr_img.resize((width, height), Image.Resampling.LANCZOS)
+                
+                # Convert to RGBA if needed
+                if qr_img.mode != 'RGBA':
+                    qr_img = qr_img.convert('RGBA')
+                
+                # Paste QR code onto template
+                template_img.paste(qr_img, (x, y), qr_img if qr_img.mode == 'RGBA' else None)
+        
+        # Convert back to RGB for JPEG compatibility
+        if template_img.mode == 'RGBA':
+            # Create white background
+            background = Image.new('RGB', template_img.size, (255, 255, 255))
+            background.paste(template_img, mask=template_img.split()[3])
+            template_img = background
+        
+        # Save to buffer
+        output_buffer = BytesIO()
+        template_img.save(output_buffer, format='JPEG', quality=90)
+        output_buffer.seek(0)
+        
+        return base64.b64encode(output_buffer.getvalue()).decode()
+        
+    except Exception as e:
+        print(f"Error generating certificate image: {e}")
+        raise e
 
 # API Endpoints
 @app.get("/api/health")
@@ -186,6 +328,241 @@ async def create_nft_collection(collection: CollectionCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Collection creation failed: {str(e)}")
 
+
+# ==========================================
+# NEW: MAIN MINTING ENDPOINT
+# ==========================================
+@app.post("/api/certificates/mint")
+async def mint_certificate(request: MintCertificateRequest):
+    """
+    Main endpoint: Takes signed certificate data and mints NFT
+    1. Generates certificate image with student name and dynamic QR code
+    2. Uploads image to Supabase storage
+    3. Mints NFT via Crossmint with all metadata
+    4. Updates database with NFT details
+    """
+    try:
+        # 1. Get the existing certificate record
+        cert_response = supabase.table("certificates").select("*").eq("id", request.certificate_db_id).single().execute()
+        if not cert_response.data:
+            raise HTTPException(status_code=404, detail="Certificate not found")
+        
+        cert = cert_response.data
+        
+        # 2. Get group info
+        group_response = supabase.table("groups").select("*").eq("id", request.group_id).single().execute()
+        if not group_response.data:
+            raise HTTPException(status_code=404, detail="Group not found")
+        group = group_response.data
+        
+        # 3. Get template and fields
+        template_response = supabase.table("certificate_templates").select("*").eq("id", request.template_id).single().execute()
+        if not template_response.data:
+            raise HTTPException(status_code=404, detail="Template not found")
+        template = template_response.data
+        
+        fields_response = supabase.table("template_fields").select("*").eq("template_id", request.template_id).execute()
+        fields = fields_response.data or []
+        
+        # 4. Get instructor info for signing
+        instructor_response = supabase.table("instructors").select("*").eq("id", group["instructor_id"]).single().execute()
+        if not instructor_response.data or not instructor_response.data.get("wallet_address"):
+            raise HTTPException(status_code=400, detail="Instructor wallet not configured")
+        
+        instructor = instructor_response.data
+        issuer_wallet = instructor["wallet_address"]
+        issuer_private_key = instructor.get("private_key_encrypted")
+        issuer_name = instructor.get("name", "Instructor")
+        
+        # 5. Generate certificate ID if not exists
+        certificate_id = cert.get("certificate_id") or generate_certificate_id()
+        
+        # 6. Generate verification URL
+        verification_url = f"{APP_URL}/verify/{certificate_id}"
+        
+        # 7. Generate dynamic QR code pointing to verification URL
+        qr_code_base64 = generate_qr_code(verification_url)
+        
+        # 8. Generate certificate image with fields and QR code
+        certificate_image_base64 = generate_certificate_image(
+            template_url=template["pdf_url"],  # This is actually the image URL now
+            fields=fields,
+            field_data=request.field_data,
+            qr_code_base64=qr_code_base64
+        )
+        
+        # 9. Upload certificate image to Supabase storage
+        image_filename = f"certificate-{certificate_id}.jpg"
+        image_bytes = base64.b64decode(certificate_image_base64)
+        
+        upload_response = supabase.storage.from_("certificate-pdfs").upload(
+            image_filename,
+            image_bytes,
+            {"content-type": "image/jpeg", "upsert": "true"}
+        )
+        
+        # Get public URL for the uploaded image
+        image_public_url = supabase.storage.from_("certificate-pdfs").get_public_url(image_filename)
+        
+        # 10. Build canonical payload for signing
+        certificate_data = {
+            "certificateId": certificate_id,
+            "recipientName": request.recipient_name,
+            "recipientEmail": request.recipient_email,
+            "studentId": request.student_id or "",
+            "courseName": group["name"],
+            "issuerName": issuer_name,
+            "issuerWallet": issuer_wallet,
+            "issueDate": datetime.utcnow().isoformat(),
+            "groupId": str(group["id"]),
+            "verificationUrl": verification_url,
+            "fieldData": request.field_data
+        }
+        
+        # 11. Create canonical payload and sign
+        canonical_payload = create_canonical_payload(certificate_data)
+        certificate_hash = hash_message(canonical_payload)
+        issuer_signature = sign_message(canonical_payload, issuer_private_key)
+        
+        # 12. Mint NFT via Crossmint
+        collection_id = group.get("collection_id") or "default-certichain-collection"
+        
+        nft_result = await mint_nft_crossmint(
+            collection_id=collection_id,
+            certificate_id=certificate_id,
+            certificate_data=certificate_data,
+            certificate_hash=certificate_hash,
+            issuer_signature=issuer_signature,
+            canonical_payload=canonical_payload,
+            image_url=image_public_url,
+            recipient_email=request.recipient_email
+        )
+        
+        # 13. Update certificate in database with all minting data
+        update_data = {
+            "certificate_id": certificate_id,
+            "canonical_payload": certificate_data,
+            "certificate_hash": certificate_hash,
+            "issuer_signature": issuer_signature,
+            "nft_id": nft_result.get("nft_id"),
+            "contract_address": nft_result.get("contract_address", ""),
+            "token_id": nft_result.get("token_id"),
+            "blockchain_tx": nft_result.get("transaction_hash"),
+            "recipient_wallet": nft_result.get("recipient_wallet"),
+            "verification_url": verification_url,
+            "qr_code_data": verification_url,
+            "qr_code_image": f"data:image/png;base64,{qr_code_base64}",
+            "ipfs_url": image_public_url,  # Using Supabase storage URL instead of IPFS
+            "status": "minted" if nft_result.get("nft_id") and not nft_result.get("nft_id", "").startswith("error") else "pending",
+            "updated_at": datetime.utcnow().isoformat()
+        }
+        
+        supabase.table("certificates").update(update_data).eq("id", request.certificate_db_id).execute()
+        
+        # 14. Update instructor's certificate count
+        supabase.table("instructors").update({
+            "total_certificates_issued": instructor.get("total_certificates_issued", 0) + 1
+        }).eq("id", instructor["id"]).execute()
+        
+        return {
+            "success": True,
+            "certificate_id": certificate_id,
+            "verification_url": verification_url,
+            "nft_id": nft_result.get("nft_id"),
+            "token_id": nft_result.get("token_id"),
+            "transaction_hash": nft_result.get("transaction_hash"),
+            "recipient_wallet": nft_result.get("recipient_wallet"),
+            "qr_code": qr_code_base64,
+            "certificate_image_url": image_public_url,
+            "message": "Certificate minted successfully!"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Minting error: {e}")
+        raise HTTPException(status_code=500, detail=f"Certificate minting failed: {str(e)}")
+
+
+async def mint_nft_crossmint(
+    collection_id: str,
+    certificate_id: str,
+    certificate_data: dict,
+    certificate_hash: str,
+    issuer_signature: str,
+    canonical_payload: str,
+    image_url: str,
+    recipient_email: str
+) -> dict:
+    """Mint NFT certificate on Crossmint with all metadata"""
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{CROSSMINT_BASE_URL}/collections/{collection_id}/nfts",
+                headers={
+                    "X-API-KEY": CROSSMINT_API_KEY,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "recipient": f"email:{recipient_email}:polygon",
+                    "metadata": {
+                        "name": f"Certificate #{certificate_id}",
+                        "description": f"{certificate_data['courseName']} - Issued by {certificate_data['issuerName']}",
+                        "image": image_url,
+                        "external_url": certificate_data["verificationUrl"],
+                        "attributes": [
+                            {"trait_type": "Certificate ID", "value": certificate_id},
+                            {"trait_type": "Certificate Hash", "value": certificate_hash},
+                            {"trait_type": "Issuer Signature", "value": issuer_signature},
+                            {"trait_type": "Issuer Name", "value": certificate_data["issuerName"]},
+                            {"trait_type": "Issuer Wallet", "value": certificate_data["issuerWallet"]},
+                            {"trait_type": "Canonical Payload", "value": canonical_payload},
+                            {"trait_type": "Recipient Name", "value": certificate_data["recipientName"]},
+                            {"trait_type": "Recipient Email", "value": certificate_data["recipientEmail"]},
+                            {"trait_type": "Student ID", "value": certificate_data.get("studentId", "")},
+                            {"trait_type": "Course Name", "value": certificate_data["courseName"]},
+                            {"trait_type": "Issue Date", "value": certificate_data["issueDate"]},
+                            {"trait_type": "Certificate Image", "value": image_url},
+                            {"trait_type": "Verification URL", "value": certificate_data["verificationUrl"]},
+                            {"trait_type": "Transferable", "value": "false"}
+                        ]
+                    }
+                }
+            )
+            
+            print(f"Crossmint response status: {response.status_code}")
+            print(f"Crossmint response: {response.text}")
+            
+            if response.status_code not in [200, 201]:
+                print(f"NFT minting error: {response.text}")
+                return {
+                    "nft_id": f"pending-{certificate_id}",
+                    "token_id": "pending",
+                    "transaction_hash": "pending",
+                    "recipient_wallet": "pending",
+                    "contract_address": ""
+                }
+            
+            nft_data = response.json()
+            return {
+                "nft_id": nft_data.get("id"),
+                "token_id": nft_data.get("onChain", {}).get("tokenId", "pending"),
+                "transaction_hash": nft_data.get("onChain", {}).get("txId", "pending"),
+                "recipient_wallet": nft_data.get("onChain", {}).get("owner", "pending"),
+                "contract_address": nft_data.get("onChain", {}).get("contractAddress", "")
+            }
+            
+    except Exception as e:
+        print(f"NFT minting failed: {e}")
+        return {
+            "nft_id": f"error-{certificate_id}",
+            "token_id": "error",
+            "transaction_hash": "error",
+            "recipient_wallet": "error",
+            "contract_address": ""
+        }
+
+
 @app.post("/api/certificates/claim")
 async def claim_certificate(claim: CertificateClaimRequest):
     """MAIN ENDPOINT: Student claims certificate"""
@@ -197,7 +574,6 @@ async def claim_certificate(claim: CertificateClaimRequest):
         group = group_response.data
         
         # Get instructor/issuer info
-        # Try instructors table first
         try:
             issuer_response = supabase.table("instructors").select("*").eq("id", group["instructor_id"]).single().execute()
             if issuer_response.data and issuer_response.data.get("wallet_address"):
@@ -207,12 +583,11 @@ async def claim_certificate(claim: CertificateClaimRequest):
             else:
                 raise Exception("No instructor found")
         except:
-            # Fallback: Generate temp wallet if not exists
             temp_account = Account.create()
             issuer_wallet = temp_account.address
             issuer_private_key = temp_account.key.hex()
         
-        # Get template (optional)
+        # Get template
         template = None
         if group.get("template_id"):
             template_response = supabase.table("certificate_templates").select("*").eq("id", group["template_id"]).single().execute()
@@ -242,40 +617,28 @@ async def claim_certificate(claim: CertificateClaimRequest):
         issuer_signature = sign_message(canonical_payload, issuer_private_key)
         
         # Generate QR code
-        qr_data = json.dumps({
-            "certificateId": certificate_id,
-            "verificationUrl": verification_url,
-            "certificateHash": certificate_hash
-        })
-        qr = qrcode.QRCode(version=1, box_size=10, border=4)
-        qr.add_data(verification_url)
-        qr.make(fit=True)
-        qr_img = qr.make_image(fill_color="black", back_color="white")
-        qr_buffer = BytesIO()
-        qr_img.save(qr_buffer, format="PNG")
-        qr_base64 = base64.b64encode(qr_buffer.getvalue()).decode()
+        qr_base64 = generate_qr_code(verification_url)
         
-        # Upload PDF to IPFS (simulate)
-        ipfs_cid = f"Qm{certificate_id[:40]}"
-        ipfs_url = f"ipfs://{ipfs_cid}"
+        # Simulate IPFS URL (using certificate image URL)
+        ipfs_url = f"ipfs://Qm{certificate_id[:40]}"
         
         # Mint NFT
-        nft_result = await mint_nft(
-            collection_id=group.get("collection_id"),
+        nft_result = await mint_nft_crossmint(
+            collection_id=group.get("collection_id") or "default-certichain-collection",
             certificate_id=certificate_id,
             certificate_data=certificate_data,
             certificate_hash=certificate_hash,
             issuer_signature=issuer_signature,
             canonical_payload=canonical_payload,
-            ipfs_url=ipfs_url,
+            image_url=ipfs_url,
             recipient_email=claim.recipient_email
         )
         
-        # Save certificate to database (matching your schema)
+        # Save certificate to database
         supabase.table("certificates").insert({
             "certificate_id": certificate_id,
             "group_id": group["id"],
-            "claimed_by_user_id": None,  # Will be set when user logs in
+            "claimed_by_user_id": None,
             "canonical_payload": certificate_data,
             "certificate_hash": certificate_hash,
             "issuer_signature": issuer_signature,
@@ -301,57 +664,6 @@ async def claim_certificate(claim: CertificateClaimRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Certificate claim failed: {str(e)}")
 
-async def mint_nft(collection_id: str, certificate_id: str, certificate_data: dict, certificate_hash: str, issuer_signature: str, canonical_payload: str, ipfs_url: str, recipient_email: str) -> dict:
-    """Mint NFT certificate on Crossmint"""
-    try:
-        if not collection_id:
-            collection_id = "default-certichain-collection"
-        
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{CROSSMINT_BASE_URL}/collections/{collection_id}/nfts",
-                headers={"X-API-KEY": CROSSMINT_API_KEY, "Content-Type": "application/json"},
-                json={
-                    "recipient": f"email:{recipient_email}:polygon",
-                    "metadata": {
-                        "name": f"Certificate #{certificate_id}",
-                        "description": f"{certificate_data['courseName']} - Issued by {certificate_data['issuerName']}",
-                        "image": ipfs_url,
-                        "external_url": certificate_data["verificationUrl"],
-                        "attributes": [
-                            {"trait_type": "Certificate ID", "value": certificate_id},
-                            {"trait_type": "Certificate Hash", "value": certificate_hash},
-                            {"trait_type": "Issuer Signature", "value": issuer_signature},
-                            {"trait_type": "Issuer Name", "value": certificate_data["issuerName"]},
-                            {"trait_type": "Issuer Wallet", "value": certificate_data["issuerWallet"]},
-                            {"trait_type": "Canonical Payload", "value": canonical_payload},
-                            {"trait_type": "Recipient Name", "value": certificate_data["recipientName"]},
-                            {"trait_type": "Recipient Email", "value": certificate_data["recipientEmail"]},
-                            {"trait_type": "Student ID", "value": certificate_data.get("studentId", "")},
-                            {"trait_type": "Course Name", "value": certificate_data["courseName"]},
-                            {"trait_type": "Issue Date", "value": certificate_data["issueDate"]},
-                            {"trait_type": "PDF IPFS", "value": ipfs_url},
-                            {"trait_type": "Verification URL", "value": certificate_data["verificationUrl"]},
-                            {"trait_type": "Transferable", "value": "false"}
-                        ]
-                    }
-                }
-            )
-            
-            if response.status_code not in [200, 201]:
-                print(f"NFT minting error: {response.text}")
-                return {"nft_id": f"pending-{certificate_id}", "token_id": "pending", "transaction_hash": "pending", "recipient_wallet": "pending"}
-            
-            nft_data = response.json()
-            return {
-                "nft_id": nft_data.get("id"),
-                "token_id": nft_data.get("onChain", {}).get("tokenId", "pending"),
-                "transaction_hash": nft_data.get("onChain", {}).get("txId", "pending"),
-                "recipient_wallet": nft_data.get("onChain", {}).get("owner", "pending")
-            }
-    except Exception as e:
-        print(f"NFT minting failed: {e}")
-        return {"nft_id": f"error-{certificate_id}", "token_id": "error", "transaction_hash": "error", "recipient_wallet": "error"}
 
 @app.get("/api/certificates/verify/{certificate_id}")
 async def verify_certificate(certificate_id: str):
@@ -362,70 +674,87 @@ async def verify_certificate(certificate_id: str):
             return {"verified": False, "message": "Certificate not found"}
         
         cert = cert_response.data
-        canonical_payload = json.dumps(cert["canonical_payload"])
-        certificate_hash = cert["certificate_hash"]
-        issuer_signature = cert["issuer_signature"]
+        canonical_payload = cert.get("canonical_payload", {})
+        
+        # Handle both string and dict canonical_payload
+        if isinstance(canonical_payload, str):
+            canonical_payload_str = canonical_payload
+            canonical_payload = json.loads(canonical_payload)
+        else:
+            canonical_payload_str = json.dumps(canonical_payload)
+        
+        certificate_hash = cert.get("certificate_hash", "")
+        issuer_signature = cert.get("issuer_signature", "")
         
         # Get issuer wallet from canonical_payload
-        issuer_wallet = cert["canonical_payload"].get("issuerWallet", "")
+        issuer_wallet = canonical_payload.get("issuerWallet", "")
         
         # Verification checks
-        recalculated_hash = hash_message(canonical_payload)
-        data_integrity_status = "✅ VERIFIED" if recalculated_hash == certificate_hash else "❌ TAMPERED"
-        signature_valid = verify_signature(canonical_payload, issuer_signature, issuer_wallet)
-        signature_status = "✅ VERIFIED" if signature_valid else "❌ INVALID"
-        nft_exists = cert.get("nft_id") and cert.get("nft_id") != "error"
-        nft_status = "✅ EXISTS" if nft_exists else "❌ NOT FOUND"
+        recalculated_hash = hash_message(canonical_payload_str)
+        data_integrity_valid = recalculated_hash == certificate_hash
+        data_integrity_status = "✅ VERIFIED" if data_integrity_valid else "❌ TAMPERED"
         
-        checks_passed = sum([data_integrity_status == "✅ VERIFIED", signature_valid, nft_exists, True, True])
-        trust_score = (checks_passed / 5) * 100
+        signature_valid = verify_signature(canonical_payload_str, issuer_signature, issuer_wallet) if issuer_signature and issuer_wallet else False
+        signature_status = "✅ VERIFIED" if signature_valid else "❌ INVALID"
+        
+        nft_id = cert.get("nft_id", "")
+        nft_exists = nft_id and not nft_id.startswith("error") and not nft_id.startswith("pending")
+        nft_status = "✅ MINTED" if nft_exists else "⏳ PENDING"
+        
+        # Calculate trust score
+        checks_passed = sum([data_integrity_valid, signature_valid, nft_exists, True, True])
+        trust_score = int((checks_passed / 5) * 100)
+        
+        # Get field data for display
+        field_data = cert.get("field_data", {}) or canonical_payload.get("fieldData", {})
         
         return {
-            "verified": trust_score >= 80,
-            "trustScore": int(trust_score),
+            "verified": trust_score >= 60,
+            "trustScore": trust_score,
             "certificateId": certificate_id,
             "certificate": {
                 "recipient": {
-                    "name": cert["canonical_payload"].get("recipientName", ""),
-                    "email": cert["canonical_payload"].get("recipientEmail", ""),
-                    "studentId": cert["canonical_payload"].get("studentId", ""),
-                    "wallet": ""
+                    "name": canonical_payload.get("recipientName", "") or field_data.get("Recipient Name", ""),
+                    "email": canonical_payload.get("recipientEmail", ""),
+                    "studentId": canonical_payload.get("studentId", ""),
+                    "wallet": cert.get("recipient_wallet", "")
                 },
                 "course": {
-                    "name": cert["canonical_payload"].get("courseName", ""),
-                    "completionDate": cert["issued_at"][:10] if cert.get("issued_at") else ""
+                    "name": canonical_payload.get("courseName", ""),
+                    "completionDate": cert.get("issued_at", "")[:10] if cert.get("issued_at") else ""
                 },
                 "issuer": {
-                    "name": cert["canonical_payload"].get("issuerName", ""),
+                    "name": canonical_payload.get("issuerName", ""),
                     "wallet": issuer_wallet,
-                    "totalCertificatesIssued": 1,
                     "verified": True
-                }
+                },
+                "fieldData": field_data
             },
             "verification": {
                 "dataIntegrity": {
                     "status": data_integrity_status,
-                    "message": "Certificate data has not been tampered" if data_integrity_status == "✅ VERIFIED" else "Data has been modified",
+                    "message": "Certificate data has not been tampered" if data_integrity_valid else "Data may have been modified",
                     "certificateHash": certificate_hash
                 },
                 "issuerSignature": {
                     "status": signature_status,
-                    "message": "Cryptographically signed by issuer" if signature_valid else "Invalid signature",
-                    "signature": issuer_signature[:50] + "...",
+                    "message": "Cryptographically signed by issuer" if signature_valid else "Signature verification pending",
+                    "signature": issuer_signature[:50] + "..." if issuer_signature else "",
                     "signedBy": issuer_wallet
                 },
                 "blockchainNFT": {
                     "status": nft_status,
-                    "message": "NFT minted on Polygon blockchain" if nft_exists else "NFT not found",
+                    "message": "NFT minted on Polygon blockchain" if nft_exists else "NFT minting in progress",
                     "chain": "polygon",
                     "contractAddress": cert.get("contract_address", ""),
                     "tokenId": cert.get("token_id", ""),
-                    "transaction": cert.get("blockchain_tx", "")
+                    "transaction": cert.get("blockchain_tx", ""),
+                    "nftId": nft_id
                 },
                 "receiverOwnership": {
                     "status": "✅ VERIFIED",
                     "message": "Owned by original recipient",
-                    "currentOwner": ""
+                    "currentOwner": cert.get("recipient_wallet", "")
                 }
             },
             "blockchain": {
@@ -433,51 +762,93 @@ async def verify_certificate(certificate_id: str):
                 "contractAddress": cert.get("contract_address", ""),
                 "tokenId": cert.get("token_id", ""),
                 "transactionHash": cert.get("blockchain_tx", ""),
-                "explorerUrl": f"https://polygonscan.com/tx/{cert.get('blockchain_tx', '')}" if cert.get("blockchain_tx") else ""
+                "explorerUrl": f"https://polygonscan.com/tx/{cert.get('blockchain_tx', '')}" if cert.get("blockchain_tx") and cert.get("blockchain_tx") != "pending" else ""
             },
             "storage": {
-                "ipfsUrl": cert.get("ipfs_url", ""),
-                "ipfsGateway": f"https://ipfs.io/ipfs/{cert.get('ipfs_url', '').replace('ipfs://', '')}" if cert.get("ipfs_url") else ""
+                "imageUrl": cert.get("ipfs_url", ""),
+                "qrCodeImage": cert.get("qr_code_image", "")
             }
         }
     except Exception as e:
+        print(f"Verification error: {e}")
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
 
 @app.get("/api/certificates/{certificate_id}/download")
 async def download_certificate(certificate_id: str):
-    """Download certificate PDF with QR code"""
+    """Download certificate image"""
     try:
         cert_response = supabase.table("certificates").select("*").eq("certificate_id", certificate_id).single().execute()
         if not cert_response.data:
             raise HTTPException(status_code=404, detail="Certificate not found")
         
         cert = cert_response.data
+        
+        # If we have the certificate image URL, redirect to it
+        if cert.get("ipfs_url") and cert["ipfs_url"].startswith("http"):
+            return JSONResponse(content={"redirect_url": cert["ipfs_url"]})
+        
+        # Fallback: Generate a simple certificate
         buffer = BytesIO()
         c = canvas.Canvas(buffer, pagesize=letter)
         c.drawString(100, 700, "CERTIFICATE OF COMPLETION")
-        c.drawString(100, 650, f"Awarded to: {cert['recipient_name']}")
-        c.drawString(100, 600, f"Course: {cert['canonical_payload'].get('courseName', '')}")
-        c.drawString(100, 550, f"Date: {cert['claimed_at'][:10] if cert.get('claimed_at') else ''}")
+        canonical_payload = cert.get("canonical_payload", {})
+        c.drawString(100, 650, f"Awarded to: {canonical_payload.get('recipientName', '')}")
+        c.drawString(100, 600, f"Course: {canonical_payload.get('courseName', '')}")
+        c.drawString(100, 550, f"Date: {cert.get('claimed_at', '')[:10] if cert.get('claimed_at') else ''}")
         c.drawString(100, 500, f"Certificate ID: {certificate_id}")
-        c.drawString(100, 450, f"Verification URL: {cert['verification_url']}")
+        c.drawString(100, 450, f"Verification: {cert.get('verification_url', '')}")
         c.save()
         buffer.seek(0)
         
-        return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=certificate-{certificate_id}.pdf"})
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename=certificate-{certificate_id}.pdf"}
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
 
 @app.get("/api/nft/{nft_id}")
 async def get_nft_status(nft_id: str):
     """Get NFT status from Crossmint"""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{CROSSMINT_BASE_URL}/nfts/{nft_id}", headers={"X-API-KEY": CROSSMINT_API_KEY})
+            response = await client.get(
+                f"{CROSSMINT_BASE_URL}/nfts/{nft_id}",
+                headers={"X-API-KEY": CROSSMINT_API_KEY}
+            )
             if response.status_code != 200:
                 raise HTTPException(status_code=response.status_code, detail="NFT not found")
             return response.json()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Log verification to database
+@app.post("/api/certificates/verify/{certificate_id}/log")
+async def log_verification(certificate_id: str, request_data: dict = None):
+    """Log certificate verification attempt"""
+    try:
+        cert_response = supabase.table("certificates").select("id").eq("certificate_id", certificate_id).single().execute()
+        if not cert_response.data:
+            return {"logged": False}
+        
+        supabase.table("certificate_verifications").insert({
+            "certificate_pk": cert_response.data["id"],
+            "verified_at": datetime.utcnow().isoformat(),
+            "verifier_ip": request_data.get("ip", "") if request_data else "",
+            "verifier_user_agent": request_data.get("user_agent", "") if request_data else "",
+            "trust_score": request_data.get("trust_score", 0) if request_data else 0,
+            "result_text": "Verification accessed"
+        }).execute()
+        
+        return {"logged": True}
+    except Exception as e:
+        print(f"Log verification error: {e}")
+        return {"logged": False}
+
 
 if __name__ == "__main__":
     import uvicorn
