@@ -390,6 +390,141 @@ def generate_certificate_image(
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
+# ==========================================
+# SUBSCRIPTION API ENDPOINTS
+# ==========================================
+
+@app.get("/api/subscription/status/{user_id}")
+async def get_subscription_status(user_id: str):
+    """Get user's subscription status and limits"""
+    try:
+        status = await check_subscription_status(user_id)
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get subscription status: {str(e)}")
+
+@app.get("/api/subscription/packages")
+async def get_credit_packages():
+    """Get available mint credit packages"""
+    return {
+        "packages": MINT_CREDIT_PACKAGES,
+        "free_limits": {
+            "groups": FREE_GROUP_LIMIT,
+            "mint_credits": FREE_MINT_LIMIT
+        }
+    }
+
+@app.post("/api/subscription/upgrade")
+async def upgrade_to_pro(request: UpgradeToProRequest):
+    """Upgrade user to Pro subscription"""
+    try:
+        instructor = await get_instructor_by_user_id(request.user_id)
+        if not instructor:
+            raise HTTPException(status_code=404, detail="Instructor not found")
+        
+        # Calculate expiration date
+        expires_at = datetime.utcnow() + timedelta(days=30 * request.duration_months)
+        
+        # Update instructor record
+        supabase.table("instructors").update({
+            "subscription_type": "pro",
+            "subscription_expires_at": expires_at.isoformat()
+        }).eq("id", instructor["id"]).execute()
+        
+        return {
+            "success": True,
+            "subscription_type": "pro",
+            "expires_at": expires_at.isoformat(),
+            "message": f"Successfully upgraded to Pro for {request.duration_months} month(s)"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upgrade failed: {str(e)}")
+
+@app.post("/api/subscription/purchase-credits")
+async def purchase_credits(request: PurchaseCreditsRequest):
+    """Purchase mint credits"""
+    try:
+        if request.package not in MINT_CREDIT_PACKAGES:
+            raise HTTPException(status_code=400, detail="Invalid package selected")
+        
+        instructor = await get_instructor_by_user_id(request.user_id)
+        if not instructor:
+            raise HTTPException(status_code=404, detail="Instructor not found")
+        
+        package = MINT_CREDIT_PACKAGES[request.package]
+        current_credits = instructor.get("mint_credits", 0)
+        new_credits = current_credits + package["credits"]
+        
+        # Update credits
+        supabase.table("instructors").update({
+            "mint_credits": new_credits
+        }).eq("id", instructor["id"]).execute()
+        
+        return {
+            "success": True,
+            "package": request.package,
+            "credits_added": package["credits"],
+            "total_credits": new_credits,
+            "price": package["price"],
+            "message": f"Successfully added {package['credits']} mint credits"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Credit purchase failed: {str(e)}")
+
+@app.post("/api/subscription/check-group-limit/{user_id}")
+async def check_group_creation_limit(user_id: str):
+    """Check if user can create a new group"""
+    try:
+        status = await check_subscription_status(user_id)
+        
+        if not status["can_create_group"]:
+            if status["subscription_type"] == "free":
+                return {
+                    "allowed": False,
+                    "reason": f"Free plan limit reached ({FREE_GROUP_LIMIT} groups). Upgrade to Pro for unlimited groups.",
+                    "groups_created": status["groups_created"],
+                    "groups_limit": status["groups_limit"],
+                    "upgrade_required": True
+                }
+            else:
+                return {
+                    "allowed": False,
+                    "reason": "Pro subscription has expired. Please renew to continue creating groups.",
+                    "groups_created": status["groups_created"],
+                    "subscription_expired": True
+                }
+        
+        return {
+            "allowed": True,
+            "groups_created": status["groups_created"],
+            "groups_limit": status["groups_limit"],
+            "subscription_type": status["subscription_type"]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Limit check failed: {str(e)}")
+
+@app.post("/api/subscription/check-mint-limit/{user_id}")
+async def check_mint_limit(user_id: str, count: int = 1):
+    """Check if user has enough mint credits"""
+    try:
+        status = await check_subscription_status(user_id)
+        
+        has_enough = status["mint_credits"] >= count
+        
+        return {
+            "allowed": has_enough,
+            "current_credits": status["mint_credits"],
+            "requested": count,
+            "subscription_type": status["subscription_type"],
+            "message": "Sufficient credits" if has_enough else f"Insufficient credits. You have {status['mint_credits']} credits, need {count}. Please purchase more credits."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Limit check failed: {str(e)}")
+
 @app.post("/api/instructor/generate-wallet")
 async def generate_instructor_wallet() -> WalletResponse:
     try:
