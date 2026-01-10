@@ -199,7 +199,7 @@ export const DashboardPage = () => {
                 <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg flex items-center gap-3">
                   <AlertTriangle className="w-5 h-5 text-orange-600" />
                   <p className="text-sm text-orange-800">
-                    You've reached the group limit for Free plan. <Link to="/pricing" className="font-medium underline">Upgrade to Pro</Link> for unlimited groups.
+                    You have reached the group limit for Free plan. <Link to="/pricing" className="font-medium underline">Upgrade to Pro</Link> for unlimited groups.
                   </p>
                 </div>
               )}
