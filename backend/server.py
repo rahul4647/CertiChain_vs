@@ -93,6 +93,32 @@ class MintCertificateRequest(BaseModel):
     recipient_name: str
     student_id: Optional[str] = None
 
+# Subscription Models
+class SubscriptionStatusResponse(BaseModel):
+    subscription_type: str  # 'free' or 'pro'
+    is_pro: bool
+    subscription_expires_at: Optional[str]
+    is_active: bool
+    mint_credits: int
+    groups_created: int
+    groups_limit: int
+    can_create_group: bool
+    can_mint: bool
+    total_certificates_issued: int
+
+class UpgradeToProRequest(BaseModel):
+    user_id: str
+    duration_months: int = 1  # Default 1 month
+
+class PurchaseCreditsRequest(BaseModel):
+    user_id: str
+    package: str  # starter, basic, standard, premium, enterprise
+
+class BatchMintRequest(BaseModel):
+    group_id: str
+    template_id: str
+    recipients: List[Dict[str, Any]]  # List of recipient data
+
 # Utility Functions
 def generate_join_code() -> str:
     import random
