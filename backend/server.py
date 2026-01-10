@@ -634,10 +634,12 @@ async def create_nft_collection(collection: CollectionCreate):
 async def mint_certificate(request: MintCertificateRequest):
     """
     Main endpoint: Takes signed certificate data and mints NFT
-    1. Generates certificate image with student name and dynamic QR code
-    2. Uploads image to Supabase storage
-    3. Mints NFT via Crossmint with all metadata
-    4. Updates database with NFT details
+    1. Checks mint credits
+    2. Generates certificate image with student name and dynamic QR code
+    3. Uploads image to Supabase storage
+    4. Mints NFT via Crossmint with all metadata
+    5. Updates database with NFT details
+    6. Deducts mint credits
     """
     try:
         # 1. Get the existing certificate record
@@ -671,6 +673,21 @@ async def mint_certificate(request: MintCertificateRequest):
         issuer_wallet = instructor["wallet_address"]
         issuer_private_key = instructor.get("private_key_encrypted")
         issuer_name = instructor.get("name", "Instructor")
+        
+        # 4.5 CHECK MINT CREDITS
+        user_id = instructor.get("user_id")
+        if user_id:
+            status = await check_subscription_status(user_id)
+            if not status["can_mint"]:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "INSUFFICIENT_CREDITS",
+                        "message": "You have no mint credits remaining. Please purchase more credits to continue minting.",
+                        "current_credits": status["mint_credits"],
+                        "subscription_type": status["subscription_type"]
+                    }
+                )
         
         # 5. Generate certificate ID if not exists
         certificate_id = cert.get("certificate_id") or generate_certificate_id()
