@@ -58,7 +58,7 @@ You need to configure Google OAuth in both Google Cloud Console and Supabase.
 Add these URLs:
 ```
 https://ewtwjfwobqkivrpicvvl.supabase.co
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 http://localhost:3000
 ```
 

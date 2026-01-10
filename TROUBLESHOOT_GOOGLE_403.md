@@ -57,7 +57,7 @@ This means Google OAuth is not configured properly yet.
 
 **Authorized JavaScript origins - Add these 3:**
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 ```
 ```
 https://ewtwjfwobqkivrpicvvl.supabase.co
@@ -172,7 +172,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 **Solution:**
 1. Check your OAuth Client credentials
 2. Verify these exact URLs are added:
-   - JavaScript origins: `https://cert-image-uploader.preview.emergentagent.com`
+   - JavaScript origins: `https://pro-plan-gateway.preview.emergentagent.com`
    - Redirect URIs: `https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback`
 
 ### Cause 5: Credentials Not Added to Supabase
@@ -216,7 +216,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 1. Click your OAuth Client ID to edit
 2. Check "Authorized JavaScript origins":
    - Should have 3 URLs
-   - One should be `https://cert-image-uploader.preview.emergentagent.com`
+   - One should be `https://pro-plan-gateway.preview.emergentagent.com`
 3. Check "Authorized redirect URIs":
    - Should have 1 URL
    - Should be `https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback`
@@ -268,7 +268,7 @@ When properly configured, here's the flow:
 4. Click "Continue"
 5. Select your Google account
 6. Grant permissions
-7. Redirected back to: `https://cert-image-uploader.preview.emergentagent.com`
+7. Redirected back to: `https://pro-plan-gateway.preview.emergentagent.com`
 8. You're logged in! ✅
 
 ---

@@ -3,7 +3,7 @@
 ## Your Correct Preview URL
 
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 ```
 
 **Remove the dots (..) at the end when adding to Google Cloud Console!**
@@ -22,7 +22,7 @@ Add these **THREE URLs** (one by one):
 
 #### 1. Your Preview URL:
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 ```
 
 #### 2. Supabase URL:
@@ -59,7 +59,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 ### ✅ Authorized JavaScript origins (3 entries):
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 https://ewtwjfwobqkivrpicvvl.supabase.co
 http://localhost:3000
 ```
@@ -91,7 +91,7 @@ REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXB
 1. **Click SAVE** in Google Cloud Console
 2. **Wait 5-10 minutes** for changes to propagate
 3. **Clear browser cache** and cookies
-4. **Go to your preview:** https://cert-image-uploader.preview.emergentagent.com
+4. **Go to your preview:** https://pro-plan-gateway.preview.emergentagent.com
 5. **Try Google Sign-In** again
 
 ---
@@ -100,7 +100,7 @@ REACT_APP_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXB
 
 ### 1. Visit your preview:
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 ```
 
 ### 2. Click "Sign in with Google"
@@ -123,7 +123,7 @@ https://cert-image-uploader.preview.emergentagent.com
 
 ### Issue: "Origin mismatch"
 **Check:**
-- Preview URL is exactly: `https://cert-image-uploader.preview.emergentagent.com`
+- Preview URL is exactly: `https://pro-plan-gateway.preview.emergentagent.com`
 - No trailing slashes or dots
 
 ### Issue: Still getting 403
@@ -141,7 +141,7 @@ https://cert-image-uploader.preview.emergentagent.com
 
 **JavaScript Origins (add all 3):**
 ```
-https://cert-image-uploader.preview.emergentagent.com
+https://pro-plan-gateway.preview.emergentagent.com
 https://ewtwjfwobqkivrpicvvl.supabase.co
 http://localhost:3000
 ```
@@ -156,7 +156,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 ## Summary
 
 Your app is available at:
-- **Preview:** https://cert-image-uploader.preview.emergentagent.com
+- **Preview:** https://pro-plan-gateway.preview.emergentagent.com
 - **Backend:** http://localhost:8001
 - **Frontend (local):** http://localhost:3000
 

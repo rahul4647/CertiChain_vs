@@ -155,7 +155,7 @@ SUPABASE_URL=https://ewtwjfwobqkivrpicvvl.supabase.co
 SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 CROSSMINT_API_KEY=sk_staging_5vWLYe3BrBnN7ZbidKY2tN91...
 CROSSMINT_BASE_URL=https://staging.crossmint.com/api/2022-06-09
-APP_URL=https://cert-image-uploader.preview.emergentagent.com
+APP_URL=https://pro-plan-gateway.preview.emergentagent.com
 BACKEND_PORT=8001
 ```
 
@@ -249,7 +249,7 @@ tail -f /var/log/supervisor/backend.out.log
 ```
 
 #### 3. Test Frontend Integration
-1. Open: https://cert-image-uploader.preview.emergentagent.com
+1. Open: https://pro-plan-gateway.preview.emergentagent.com
 2. Try creating a group (need instructor in DB first)
 3. Try claiming a certificate
 4. Test verification

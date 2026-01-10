@@ -11,7 +11,7 @@ Request ID: 15463389029483807388
 Your URLs are CORRECT:
 - ✅ https://ewtwjfwobqkivrpicvvl.supabase.co
 - ✅ http://localhost:3000
-- ✅ https://cert-image-uploader.preview.emergentagent.com
+- ✅ https://pro-plan-gateway.preview.emergentagent.com
 - ✅ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 But Google won't let you save them.
@@ -25,7 +25,7 @@ But Google won't let you save them.
 The preview URL might be causing validation issues. Let's save without it first:
 
 **Step 1: Remove Preview URL**
-1. Click the **X** next to `https://cert-image-uploader.preview.emergentagent.com` to remove it
+1. Click the **X** next to `https://pro-plan-gateway.preview.emergentagent.com` to remove it
 2. Keep only these 2:
    - `https://ewtwjfwobqkivrpicvvl.supabase.co`
    - `http://localhost:3000`
@@ -147,7 +147,7 @@ Instead of all at once:
 
 **Step 5: Add Preview URL Last**
 1. Edit OAuth client again
-2. Add: `https://cert-image-uploader.preview.emergentagent.com`
+2. Add: `https://pro-plan-gateway.preview.emergentagent.com`
 3. Click **Save**
 
 ---
@@ -175,7 +175,7 @@ https://ewtwjfwobqkivrpicvvl.supabase.co/auth/v1/callback
 
 ### Option A: Simplest (Recommended)
 
-1. **Click the X** next to `https://cert-image-uploader.preview.emergentagent.com`
+1. **Click the X** next to `https://pro-plan-gateway.preview.emergentagent.com`
 2. **Remove** the preview URL
 3. Keep only Supabase and localhost
 4. **Click Save**
