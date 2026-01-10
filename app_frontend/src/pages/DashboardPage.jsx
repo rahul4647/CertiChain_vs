@@ -386,7 +386,7 @@ export const DashboardPage = () => {
             {obtainedCertificates.length === 0 ? (
               <div className="p-12 text-center">
                 <Award className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500">You haven't received any certificates yet.</p>
+                <p className="text-slate-500">You have not received any certificates yet.</p>
                 <Link to="/join">
                   <Button variant="outline" className="mt-4">
                     Join a Group
