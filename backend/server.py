@@ -536,6 +536,31 @@ async def generate_instructor_wallet() -> WalletResponse:
 @app.post("/api/groups")
 async def create_group(group: GroupCreate):
     try:
+        # Check subscription limits before creating group
+        status = await check_subscription_status(group.creator_user_id)
+        
+        if not status["can_create_group"]:
+            if status["subscription_type"] == "free":
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "GROUP_LIMIT_REACHED",
+                        "message": f"Free plan allows only {FREE_GROUP_LIMIT} groups. Upgrade to Pro for unlimited groups.",
+                        "groups_created": status["groups_created"],
+                        "groups_limit": status["groups_limit"],
+                        "upgrade_required": True
+                    }
+                )
+            else:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "SUBSCRIPTION_EXPIRED",
+                        "message": "Your Pro subscription has expired. Please renew to continue creating groups.",
+                        "subscription_expired": True
+                    }
+                )
+        
         join_code = generate_join_code()
         response = supabase.table("groups").insert({
             "name": group.name,
