@@ -598,7 +598,7 @@ export const CreateCertificatePage = () => {
                 <div className="flex-1">
                   <h3 className="font-bold text-orange-800 mb-1">Group Limit Reached</h3>
                   <p className="text-orange-700 text-sm">
-                    You've created {subscriptionStatus.groups_created} of {subscriptionStatus.groups_limit} groups allowed on the Free plan.
+                    You have created {subscriptionStatus.groups_created} of {subscriptionStatus.groups_limit} groups allowed on the Free plan.
                     Upgrade to Pro for unlimited group creation.
                   </p>
                 </div>
