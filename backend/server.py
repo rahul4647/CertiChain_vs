@@ -168,6 +168,103 @@ def generate_qr_code(data: str) -> str:
     qr_buffer.seek(0)
     return base64.b64encode(qr_buffer.getvalue()).decode()
 
+# ==========================================
+# SUBSCRIPTION HELPER FUNCTIONS
+# ==========================================
+
+async def get_instructor_by_user_id(user_id: str):
+    """Get instructor record by user_id"""
+    try:
+        response = supabase.table("instructors").select("*").eq("user_id", user_id).single().execute()
+        return response.data
+    except Exception:
+        return None
+
+async def get_user_groups_count(user_id: str) -> int:
+    """Count groups created by a user"""
+    try:
+        response = supabase.table("groups").select("id", count="exact").eq("created_by", user_id).execute()
+        return response.count if response.count else 0
+    except Exception:
+        return 0
+
+async def check_subscription_status(user_id: str) -> dict:
+    """Check user's subscription status and limits"""
+    instructor = await get_instructor_by_user_id(user_id)
+    
+    if not instructor:
+        # No instructor record - treat as free user
+        return {
+            "subscription_type": "free",
+            "is_pro": False,
+            "subscription_expires_at": None,
+            "is_active": False,
+            "mint_credits": FREE_MINT_LIMIT,
+            "groups_created": 0,
+            "groups_limit": FREE_GROUP_LIMIT,
+            "can_create_group": True,
+            "can_mint": True,
+            "total_certificates_issued": 0
+        }
+    
+    subscription_type = instructor.get("subscription_type", "free")
+    subscription_expires_at = instructor.get("subscription_expires_at")
+    mint_credits = instructor.get("mint_credits", FREE_MINT_LIMIT if subscription_type == "free" else 0)
+    total_certs = instructor.get("total_certificates_issued", 0)
+    
+    # Check if Pro subscription is still active
+    is_pro_active = False
+    if subscription_type == "pro" and subscription_expires_at:
+        expires_dt = datetime.fromisoformat(subscription_expires_at.replace('Z', '+00:00'))
+        is_pro_active = expires_dt > datetime.now(expires_dt.tzinfo)
+    
+    # If Pro expired, revert to free
+    if subscription_type == "pro" and not is_pro_active:
+        subscription_type = "free"
+    
+    # Get groups count
+    groups_count = await get_user_groups_count(user_id)
+    
+    # Calculate limits
+    if subscription_type == "free":
+        groups_limit = FREE_GROUP_LIMIT
+        can_create_group = groups_count < FREE_GROUP_LIMIT
+        can_mint = mint_credits > 0
+    else:  # Pro
+        groups_limit = -1  # Unlimited
+        can_create_group = is_pro_active
+        can_mint = mint_credits > 0
+    
+    return {
+        "subscription_type": subscription_type,
+        "is_pro": subscription_type == "pro" and is_pro_active,
+        "subscription_expires_at": subscription_expires_at,
+        "is_active": is_pro_active if subscription_type == "pro" else True,
+        "mint_credits": mint_credits,
+        "groups_created": groups_count,
+        "groups_limit": groups_limit,
+        "can_create_group": can_create_group,
+        "can_mint": can_mint,
+        "total_certificates_issued": total_certs
+    }
+
+async def deduct_mint_credits(user_id: str, count: int = 1) -> bool:
+    """Deduct mint credits from user's balance"""
+    instructor = await get_instructor_by_user_id(user_id)
+    if not instructor:
+        return False
+    
+    current_credits = instructor.get("mint_credits", 0)
+    if current_credits < count:
+        return False
+    
+    new_credits = current_credits - count
+    supabase.table("instructors").update({
+        "mint_credits": new_credits
+    }).eq("id", instructor["id"]).execute()
+    
+    return True
+
 def generate_certificate_image(
     template_url: str,
     fields: List[Dict],
