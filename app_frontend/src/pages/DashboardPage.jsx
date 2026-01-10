@@ -287,7 +287,7 @@ export const DashboardPage = () => {
             {myGroups.length === 0 ? (
               <div className="p-12 text-center">
                 <Users className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-                <p className="text-slate-500">You haven't created any groups yet.</p>
+                <p className="text-slate-500">You have not created any groups yet.</p>
                 {subscriptionStatus?.can_create_group && (
                   <Link to="/dashboard/create-certificate">
                     <Button className="mt-4 bg-blue-600 hover:bg-blue-700 text-white">
