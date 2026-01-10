@@ -373,7 +373,7 @@ export const PricingPage = () => {
               <Card>
                 <CardContent className="p-6">
                   <h3 className="font-bold text-lg text-slate-900 mb-2">Can I downgrade from Pro to Free?</h3>
-                  <p className="text-slate-600">Yes, your Pro subscription will simply not renew. You'll keep any remaining credits, but won't be able to purchase more or create new groups beyond the Free limit of 2.</p>
+                  <p className="text-slate-600">Yes, your Pro subscription will simply not renew. You will keep any remaining credits, but will not be able to purchase more or create new groups beyond the Free limit of 2.</p>
                 </CardContent>
               </Card>
               
