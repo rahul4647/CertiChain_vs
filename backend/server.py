@@ -779,6 +779,10 @@ async def mint_certificate(request: MintCertificateRequest):
             "total_certificates_issued": instructor.get("total_certificates_issued", 0) + 1
         }).eq("id", instructor["id"]).execute()
         
+        # 15. DEDUCT MINT CREDITS after successful minting
+        if user_id:
+            await deduct_mint_credits(user_id, 1)
+        
         return {
             "success": True,
             "certificate_id": certificate_id,
