@@ -8,7 +8,7 @@ import json
 import io
 import base64
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 import qrcode
 from eth_account import Account
 from eth_account.messages import encode_defunct
@@ -44,6 +44,21 @@ APP_URL = os.getenv("APP_URL", "http://localhost:3000")
 
 # Initialize Supabase client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# ==========================================
+# SUBSCRIPTION CONSTANTS
+# ==========================================
+FREE_GROUP_LIMIT = 2  # Free users can only create 2 groups
+FREE_MINT_LIMIT = 5   # Free users can only mint 5 certificates at a time
+
+# Mint credit packages for Pro users
+MINT_CREDIT_PACKAGES = {
+    "starter": {"credits": 50, "price": 9.99},
+    "basic": {"credits": 100, "price": 19.99},
+    "standard": {"credits": 250, "price": 39.99},
+    "premium": {"credits": 500, "price": 69.99},
+    "enterprise": {"credits": 1000, "price": 119.99}
+}
 
 # Pydantic Models
 class WalletResponse(BaseModel):
