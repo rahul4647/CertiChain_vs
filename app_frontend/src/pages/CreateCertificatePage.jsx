@@ -587,8 +587,55 @@ export const CreateCertificatePage = () => {
           Create Certificate Group
         </h1>
 
+        {/* SUBSCRIPTION LIMIT WARNING */}
+        {subscriptionStatus && !canCreateGroup && (
+          <Card className="border-2 border-orange-300 bg-orange-50">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                  <AlertTriangle className="w-6 h-6 text-orange-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-bold text-orange-800 mb-1">Group Limit Reached</h3>
+                  <p className="text-orange-700 text-sm">
+                    You've created {subscriptionStatus.groups_created} of {subscriptionStatus.groups_limit} groups allowed on the Free plan.
+                    Upgrade to Pro for unlimited group creation.
+                  </p>
+                </div>
+                <Link to="/pricing">
+                  <Button className="bg-purple-600 hover:bg-purple-700 text-white">
+                    <Crown className="w-4 h-4 mr-2" />
+                    Upgrade to Pro
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* SUBSCRIPTION STATUS BANNER */}
+        {subscriptionStatus && canCreateGroup && !subscriptionStatus.is_pro && (
+          <Card className="border border-blue-200 bg-blue-50">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-slate-100 text-slate-700">Free Plan</Badge>
+                  <span className="text-sm text-slate-600">
+                    Groups: {subscriptionStatus.groups_created}/{subscriptionStatus.groups_limit} • 
+                    Mint Credits: {subscriptionStatus.mint_credits}
+                  </span>
+                </div>
+                <Link to="/pricing" className="text-sm text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1">
+                  <Crown className="w-4 h-4" />
+                  Upgrade for unlimited
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* STEP 1 */}
-        {currentStep === 1 && (
+        {currentStep === 1 && canCreateGroup && (
           <Card data-aos="fade-up">
             <CardContent className="p-8 space-y-6">
               <div>
