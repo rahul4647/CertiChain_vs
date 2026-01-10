@@ -958,7 +958,7 @@ export const CreateCertificatePage = () => {
             <Card className="bg-gradient-to-br from-blue-50 to-white border-2 border-blue-200">
               <CardContent className="p-8">
                 <h2 className="text-2xl font-bold text-slate-900 mb-4">Ready to Deploy?</h2>
-                <p className="text-slate-600 mb-6">Once deployed, you'll receive a unique join code that learners can use to claim their certificates.</p>
+                <p className="text-slate-600 mb-6">Once deployed, you will receive a unique join code that learners can use to claim their certificates.</p>
                 <div className="flex justify-between">
                   <Button variant="outline" onClick={() => setCurrentStep(2)} className="px-8 py-6 rounded-xl">
                     <ArrowLeft className="mr-2 w-5 h-5" />
