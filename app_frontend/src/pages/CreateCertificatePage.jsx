@@ -12,17 +12,22 @@ import {
   Copy,
   Share2,
   CheckCircle,
-  ExternalLink
+  ExternalLink,
+  Crown,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import DashboardLayout from "@/components/DashboardLayout";
 import { supabase } from "@/supabaseClient";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import QRCode from "qrcode";
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 
 export const CreateCertificatePage = () => {
   const navigate = useNavigate();
@@ -38,6 +43,10 @@ export const CreateCertificatePage = () => {
   const fileInputRef = useRef(null);
   const previewRef = useRef(null);
 
+  // Subscription status
+  const [subscriptionStatus, setSubscriptionStatus] = useState(null);
+  const [canCreateGroup, setCanCreateGroup] = useState(true);
+
   // fields now support type: "text" | "qr" and qrImage for qr type
   const [fields, setFields] = useState([
     { id: Date.now().toString(), type: "text", label: "Recipient Name", x: 50, y: 80, width: 250, height: 36 },
@@ -47,6 +56,31 @@ export const CreateCertificatePage = () => {
   const resizingRef = useRef({ id: null });
 
   const [loading, setLoading] = useState(false);
+
+  // Check subscription limits on load
+  useEffect(() => {
+    const checkLimits = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (!user) {
+        navigate('/login');
+        return;
+      }
+
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/subscription/status/${user.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSubscriptionStatus(data);
+          setCanCreateGroup(data.can_create_group);
+        }
+      } catch (err) {
+        console.error('Failed to check subscription status:', err);
+      }
+    };
+
+    checkLimits();
+  }, [navigate]);
 
   // NEW — store deployed group info
   const [deployedGroup, setDeployedGroup] = useState(null);
